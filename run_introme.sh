@@ -1,7 +1,12 @@
 #!/bin/bash
-cd /data/intronome/outputs
-Fam=F1
-ref_dir=~/data/intronome/references
+
+#directories
+working_dir=/data/intronome/outputs
+ref_dir=/data/intronome/references
+data_dir=/data/introme/data
+#input joint VCF
+input_VCF=R_170503_GINRAV_DNA_M001.hc.vqsr.vep.vcf.gz
+#genome subset files
 intron=UCSC_intron.bed
 5UTR=UCSC_5primeUTR.bed
 3UTR=UCSC_3primeUTR.bed
@@ -10,44 +15,52 @@ MotifFeatInput=homo_sapiens.GRCh37.motiffeatures.20161117.gff.gz
 MotifFeat=Ens_MotifFeat
 RegFeatInput=homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20161117.gff.gz 
 RegFeat=Ens_RefFeat
-input=~/data/intronome/data/R_170503_GINRAV_DNA_M001.hc.vqsr.vep.vcf.gz
-daily_date=$(date +%d-%b)
-echo 'beginning intersection' && \
-bedtools intersect -header -a $input -b $ref_dir/$intron | bgzip > $Fam.$intron.vcf.gz && tabix -p vcf $Fam.$intron.vcf.gz && echo $intron 'done' \
-&& bedtools intersect -header -a $input -b $ref_dir/5UTR | bgzip > $Fam.5UTR.vcf.gz && tabix -p vcf $Fam.5UTR.vcf.gz && echo $5UTR 'done' \
-&& bedtools intersect -header -a $input -b $ref_dir/3UTR | bgzip > $Fam.3UTR.vcf.gz && tabix -p vcf out_dir/$Fam.5UTR.vcf.gz && echo $3UTR 'done' \
-&& bedtools intersect -header -a $input -b $ref_dir/2000US | bgzip > $Fam.$2000US.vcf.gz && tabix -p vcf $Fam.$2000US.vcf.gz && echo $2000US 'done' \
-&& bedtools intersect -header -a $input -b $ref_dir/MotifFeatInput | bgzip > $Fam.$MotifFeat.vcf.gz && tabix -p vcf $Fam.$MotifFeat.vcf.gz && echo $MotifFeatInput 'done' \
-&& bedtools intersect -header -a $input -b $ref_dir/RegFeatInput | bgzip > $Fam.$RegFeat.vcf.gz && tabix -p vcf $Fam.$RegFeat.vcf.gz && echo $RegFeatInput 'done' \
-&& echo 'all complete'
+#Patient selection
+Family=F1
+#Hard filter cutoffs for step 3
+gnomad_AF= <0.5
+gnomad_AC= <=100
+DANN_score= >=0.8
+MGRB_AC= <=50
+fathmm-MKL= >=0.6
+CADD_phred= >=10
 
-#Step 2- VCF anno. 
+###STEP ONE- subsetting your joint VCF to genomic regions of interest
+echo $(date +%x_%r) 'beginning intersection'
+bedtools intersect -header -a $input_VCF -b $ref_dir/$intron $ref_dir/$5UTR $ref_dir/$3UTR $ref_dir/$2000US $ref_dir/$MotifFeatInput $ref_dir/$RegFeatInput | bgzip > $out_dir/$Family.subet.vcf.gz && tabix -p vcf $out_dir/$Fam.subset.vcf.gz
+echo $(date +%x_%r) 'intersection complete'
 
-##IMPORTANT VCF FORMATTING NOTE####
+###STEP TWO- annotating your subsetted VCF/s with useful information, to be used for filtering downstream
+#Use conf.toml file to specify what you want VCFanno to do (example at https://github.com/SarahBeecroft/introme)
 
+                                                      ##IMPORTANT VCF FORMATTING NOTE####
 ##VCVFanno It requires bgzipped, tabix indexed BED, GFF VCF files as input. If your input VCF has incorectly formatted headers, VCFanno will not work. 
 #eg ##INFO=<ID=CC,Number=1,Type=String,Description=""> This does not have any info between the "" and is invalid for VCFanno. Fix by removing headers with sed. E.g. 
-
 #sed '1,14d' input.file > output.file && echo -e 'newheaderinfo' | cat - output.file > reheadered.output.file.
 
-for VCF in $(ls *.vcf.gz)
-do 
-vcfanno conf.toml $VCF | bgzip > annotated.$VCF && tabix -p vcf annotated.$VCF && echo $VCF 'annotation complete'
-done
-#Use conf.toml file to specify what you want VCFanno to do. this is the one I used. 
+echo $(date +%x_%r) 'annotation beginning'
+vcfanno $ref_dir/conf.toml $out_dir/$Fam.subset.vcf.gz | \
+bgzip > $out_dir/$Fam.subset.annotated.vcf.gz
+&& tabix -p vcf $out_dir/$Fam.subset.annotated.vcf.gz
+echo $(date +%x_%r) 'annotation complete'
+zcat $out_dir/annotated.$Fam.subset.vcf.gz | grep '#' | gzip > $out_dir/$Fam.subset.annotated.vcf.header.gz
+
 #Step 3- Hard filtering your subsetted, annotated VCF
 #Filtering thresholds will depend on your application. this is a guide. A useful doc is http://www.enlis.com/blog/2015/03/17/the-best-variant-prediction-method-that-no-one-is-using/
-for annotated_file in $(ls annotated.*.vcf.gz)
-do 
-zcat $annotated_file | perl -ne 'if ($_ =~ /gn_af=(.*?);/) { if ($1 < 0.5) { print $_; }}' | \
-perl -ne 'if ($_ =~ /gn_ac=(.*?);/) { if ($1 <= 100) { print $_; }}' | \
-perl -ne 'if ($_ =~ /DANN_score=(.*?);/) { if ($1 >= 0.8) { print $_; }}' | \
-perl -ne 'if ($_ =~ /mgrb_ac=(.*?);/) { if ($1 <= 50) { print $_; }}' | \
-perl -ne 'if ($_ =~ /fathmm-MKL_non-coding=(.*?);/) { if ($1 >= 0.6) { print $_; }}' | \
-perl -ne 'if ($_ =~ /CADD_phred=(.*?);/) { if ($1 >= 10) { print $_; }}' | \
-bgzip > filtered.$annotated_file && tabix filtered.$annotated_file
-done
+echo $(date +%x_%r) 'filtering' $out_dir/$Fam.subset.annotated.vcf.gz
 
+zcat $out_dir/$Fam.subset.annotated.vcf.gz | perl -ne 'if ($_ =~ /gn_af=(.*?);/) { if ($1 $gnomad_AF) { print $_; }}' | \
+perl -ne 'if ($_ =~ /gn_ac=(.*?);/) { if ($1 $gnomad_AC) { print $_; }}' | \
+perl -ne 'if ($_ =~ /DANN_score=(.*?);/) { if ($1 $DANN_score) { print $_; }}' | \
+perl -ne 'if ($_ =~ /mgrb_ac=(.*?);/) { if ($1 $MGRB_AC) { print $_; }}' | \
+perl -ne 'if ($_ =~ /fathmm-MKL_non-coding=(.*?);/) { if ($1 $fathmm-MKL) { print $_; }}' | \
+perl -ne 'if ($_ =~ /CADD_phred=(.*?);/) { if ($1 $CADD_phred) { print $_; }}' | \
+bgzip > $out_dir/$Fam.subset.tmp.vcf.gz
+zcat $out_dir/$Fam.subset.annotated.vcf.header.gz zcat $out_dir/$Fam.subset.tmp.vcf.gz | \
+bgzip > $out_dir/$Fam.subset.annotated.filteredvcf.gz
+tabix $out_dir/$Fam.subset.annotated.filteredvcf.gz
+
+echo $(date +%x_%r) 'completed filtering' $annotatedVCF
 
 #step4- SHOW ME WHAT YOU GOT (ahem rick and morty). how many variants? ##includes headers!!##
 
