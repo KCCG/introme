@@ -1,11 +1,19 @@
 #!/bin/bash
-
+#input joint VCF
+input_VCF=$1
+#used R_170503_GINRAV_DNA_M001.hc.vqsr.vep.vcf.gz
+#Family structure
+#define affected samples
+PROBAND=D16-1922
+AFF2=D16-0862
+AFF3=D03-114
+#define UNaffected samples
+#HEALTHY1=
+#HEALTHY2=
 #directories
 working_dir=/data/intronome/outputs
 ref_dir=/data/intronome/references
 data_dir=/data/introme/data
-#input joint VCF
-input_VCF=R_170503_GINRAV_DNA_M001.hc.vqsr.vep.vcf.gz
 #genome subset files
 intron=UCSC_intron.bed
 5UTR=UCSC_5primeUTR.bed
@@ -56,12 +64,28 @@ perl -ne 'if ($_ =~ /mgrb_ac=(.*?);/) { if ($1 $MGRB_AC) { print $_; }}' | \
 perl -ne 'if ($_ =~ /fathmm-MKL_non-coding=(.*?);/) { if ($1 $fathmm-MKL) { print $_; }}' | \
 perl -ne 'if ($_ =~ /CADD_phred=(.*?);/) { if ($1 $CADD_phred) { print $_; }}' | \
 bgzip > $out_dir/$Fam.subset.tmp.vcf.gz
+#add header information back again
 zcat $out_dir/$Fam.subset.annotated.vcf.header.gz zcat $out_dir/$Fam.subset.tmp.vcf.gz | \
 bgzip > $out_dir/$Fam.subset.annotated.filteredvcf.gz
 tabix $out_dir/$Fam.subset.annotated.filteredvcf.gz
-
 echo $(date +%x_%r) 'completed filtering' $annotatedVCF
 
-#step4- SHOW ME WHAT YOU GOT (ahem rick and morty). how many variants? ##includes headers!!##
+##STEP 4 - family filtering
+#de novo filter 
+PROBAND=D16-1922
+AFF2=D16-0862
+AFF3=D03-114
 
-wc -l filtered.*.vcf.gz > variant_count.$daily_date.txt
+Dominant
+bcftools filter -i'0/1' -f'%$PROBAND %$AFF2 %$AFF3\n' $file > dominant.gt_filter.%file
+
+De novo
+bcftools filter -i'0/1' -f'%$PROBAND\n' || -e'0/1' -f'%$MUM %$DAD\n' $file > denovo.gt_filter.%file
+
+Homo recessive
+bcftools filter -i'1/1' -f'%$PROBAND %$AFF2 %$AFF3\n' || -i'0/1' -f '%$MUM %$DAD\n' $file > homRec.gt_filter.%file
+if filter=de_novo
+then
+do
+
+print where GT 0/1
