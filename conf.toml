@@ -16,11 +16,11 @@ fields = ["AF", "AC", "AN", "POPMAX", "AF_POPMAX", "AC_POPMAX", "AN_POPMAX"]
 ops=["self", "self", "self", "self", "self", "self", "self"]
 names=["gn_af", "gn_ac", "gn_an", "gn_popmax", "gn_pm_af", "gn_pm_ac", "gn_pm_an"]
 
-#[[annotation]]
-#file="annotations/cadd_v1.3.vcf.gz"
-#names=["cadd_phred", "cadd_raw"]
-#ops=["mean", "mean"]
-#fields=["phred", "raw"]
+[[annotation]]
+file="annotations/cadd_v1.3.vcf.gz"
+names=["cadd_phred", "cadd_raw"]
+ops=["self", "self"]
+fields=["phred", "raw"]
 ###used process outlined on https://github.com/brentp/vcfanno/blob/master/docs/examples/cadd.md to create CADD vcf file from original download
 
 [[annotation]]
