@@ -2,21 +2,45 @@
 
 The purpose of this script is to take a VCF file and first remove all variants that are not in regions of interest (intronic regions). Then, remaining variants are annotated with pathogenicity scores and global allele frequencies. Finally, hard filters are applied to annotations to remove variants that are almost definitely not pathogenic (e.g. common in human populations).
 
-# Using Introme
+# Developers
 
-./introme.sh input.vcf.gz UCSC\_introns.bed.gz output\_prefix
+Introme was conceived and initially specced as an idea by Dr. Mark Cowley and Dr. Velimir Gayevskiy. Sarah Beecroft carried out initial implementation. Dr. Velimir Gayevskiy reimplemented and added features.
 
 # Requirements
 
-You need the following software installed:
+## You need the following software installed
+
+Introme is developed on macOS and runs with the following dependencies which can be mostly found using the Homebrew package manager for macOS. It should work just fine on Linux with the same dependencies installed as it is a Shell script.
+
 * bedtools
 * tabix
 * vcfanno
 * bcftools
+* bgzip
+* tabix
 
-The VCF file supplied should be:
-* Decomposed and normalised (i.e. no multi-allelic variants)
+## The VCF file supplied should be
 
-# vcfanno annotations
+* Created using GATK HaplotypeCaller (other variant callers may work but are currently untested)
+* Decomposed and normalised (i.e. no multi-allelic variants) with vt
+* Annotated with VEP (optional but very useful for knowing what genes the variants are in)
 
-vcfanno requires bgzipped, tabix indexed BED, GFF or VCF files as input. If your input VCF has incorectly formatted headers, vcfanno will not work. e.g. ##INFO=<ID=CC,Number=1,Type=String,Description=""> This does not have any info between the "" and is invalid for vcfanno. Fix by removing headers with sed. E.g. sed '1,14d' input.file > output.file && echo -e 'newheaderinfo' | cat - output.file > reheadered.output.file.
+## Annotations
+
+* CADD v1.3 VCF created using the instructions at: https://github.com/brentp/vcfanno/blob/master/docs/examples/cadd.md
+* gnomad.genomes.sites.merged.AF\_AC_AN\_only.vcf.gz
+* MGRB variant allele frequencies (these are not public so remove this annotation manually)
+
+# Using Introme
+
+## Options
+
+* -a -- one or more affected sample names (specify multiple times if more than one), must have the same sample name as in the VCF file
+* -b -- path to search space BED file
+* -i -- inheritance pattern, can be one of "denovo" or "autrec"
+* -p -- output prefix
+* -v -- path to VCF file
+
+## Example
+
+./run\_introme.sh -b "subsetting/UCSC\_introns.bed.gz" -v "input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz" -p "Fam1" -i "denovo" -a "A001C"
