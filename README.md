@@ -1,6 +1,8 @@
 # What is Introme?
 
-The purpose of this script is to take a VCF file and first remove all variants that are not in regions of interest (intronic regions). Then, remaining variants are annotated with pathogenicity scores and global allele frequencies. Finally, hard filters are applied to annotations to remove variants that are almost definitely not pathogenic (e.g. common in human populations).
+Introme identifies high quality, rare, intronic, damaging genetic variants resulting from whole genome sequencing and following an expected mendelian inheritance pattern.
+
+It takes a VCF file containing the millions of variants found in a typical family trio and applies a number of filters until a putatively damaging list of intronic variants is left. Further prediction and prioritisation is achieved using database annotations and calculation of potential to create cryptic splice sites.
 
 # Developers
 
@@ -18,6 +20,7 @@ Introme is developed on macOS and runs with the following dependencies which can
 * bcftools
 * bgzip
 * tabix
+* MaxEntScan (supplied from http://genes.mit.edu/burgelab/maxent/download/)
 
 ## The VCF file supplied should be
 
@@ -43,4 +46,4 @@ Introme is developed on macOS and runs with the following dependencies which can
 
 ## Example
 
-./run\_introme.sh -b "subsetting/UCSC\_introns.bed.gz" -v "input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz" -p "Fam1" -i "denovo" -a "A001C"
+./run\_introme.sh -b subsetting/UCSC\_introns.bed.gz -v input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz -p Fam1 -i denovo -a A001C

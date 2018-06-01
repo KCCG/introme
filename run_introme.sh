@@ -5,6 +5,9 @@
 # Developers:
 # Velimir Gayevskiy (vel@vel.nz)
 # Sarah Beecroft (sarah.beecroft@uwa.edu.au)
+#
+# TODO:
+# 1) Perhaps pre-calculate all possible max MaxEntScan scores/sequences for every possible SNP in the reference genome? Back-of-the-envelope estimate for this is 50,000 days on 1 CPU (for just 5' though) so with access to a few thousand it wouldn't take long.
 
 
 
@@ -40,13 +43,14 @@ max_DP='>=20' # The sample with the highest depth in the VCF must have a higher 
 ##################################
 # INTROME ARGUMENTS
 
-while getopts "a:b:v:p:i:" opt; do
+while getopts "a:b:v:p:i:r:" opt; do
     case $opt in
         a) affected_samples+=("$OPTARG");; # Array of affected samples
         b) input_BED="$OPTARG";; # Input BED file (i.e. regions of interest)
         v) input_VCF="$OPTARG";; # Input VCF file
         p) prefix="$OPTARG";; # Output file prefix
         i) inheritance_pattern="$OPTARG";; # Inheritance pattern to use
+        r) reference_genome="$OPTARG";; # Path to the reference genome used for mapping
     esac
 done
 shift $((OPTIND -1)) # Remove parsed options and args from $@ list
@@ -66,6 +70,9 @@ elif [ -z $prefix ]; then
 	exit 1
 elif [ -z $inheritance_pattern ]; then
 	echo "No inheritance pattern has been supplied."
+	exit 1
+elif [ -z $reference_genome ]; then
+	echo "No reference genome file has been supplied."
 	exit 1
 fi
 
@@ -99,10 +106,10 @@ i=0
 while [[ $i -le $((${#vcfsamples[@]}-1)) ]]; do 
 	# Run custom function to check if the current VCF sample has been supplied as an affected sample
 	stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
-	
+
 	# Start of the genotype filter string
 	genotype_filters+=" && FORMAT/GT[$i]='"
-	
+
 		# If the current VCF sample is affected
 		if [ $? == 0 ]; then
 			if [ "$inheritance_pattern" = "denovo" ]; then
@@ -118,10 +125,10 @@ while [[ $i -le $((${#vcfsamples[@]}-1)) ]]; do
 				genotype_filters+="0/1"
 			fi
 		fi
-	
+
 	# Close off genotype filter string
 	genotype_filters+="'"
-	
+
 	# Iterate the $i variable
 	((i++))
 done
@@ -158,8 +165,40 @@ echo $(date +%x_%r) 'Filtering complete'
 
 ##################################
 
-# For MaxEntScan:
-# echo "ctctactactatctatctagatc" | perl score3.pl - | cut -f 2
+# Go through each line of the results VCF ignoring header lines
+gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | \
+while read line; do
+	max_maxentscan=''
+	max_maxentscan_sequence=''
+	max_maxentscan_coordinates=''
+	current_chr=$(echo "$line" | cut -f 1)
+	current_pos=$(echo "$line" | cut -f 2)
+	current_alt=$(echo "$line" | cut -f 5)
+	
+	# $i is the offset for determining the coordinate range
+	for i in {0..8}; do
+		# Determine the putative splice site coordinate range
+		current_coordinate_range="$current_chr:"$(($current_pos - 8 + $i))"-"$(($current_pos + i))
+		
+		# Extract the putative splice site from the reference genome
+		current_splice_site=$(samtools faidx $reference_genome $current_coordinate_range | grep -v '^>')
+		
+		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score5.pl - | cut -f 2)
+		
+		# If this is the first iteration where a max MaxEntScan hasn't been set yet, set it
+		if [ "$max_maxentscan" == "" ] || (( $(echo $current_maxentscan'>'$max_maxentscan | bc -l) )); then
+			max_maxentscan=$current_maxentscan
+			max_maxentscan_sequence=$current_splice_site
+			max_maxentscan_coordinates=$current_coordinate_range
+		fi
+		
+	done
+	
+	echo "Max: $max_maxentscan"
+	echo "Sequence: $max_maxentscan_sequence"
+	echo "Coordinates: $max_maxentscan_coordinates"
+	
+done
 
 ##################################
 
