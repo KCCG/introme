@@ -80,12 +80,12 @@ fi
 # STEP 1: subsetting the VCF to genomic regions of interest (first because it gets rid of the most variants)
 
 echo $(date +%x_%r) 'Beginning subsetting'
-echo $(gzip -d -c $input_VCF | wc -l) 'VCF lines prior to subsetting'
+echo $(gzip -d -c $input_VCF | grep -v '^#' | wc -l) 'variants prior to subsetting'
 
 bedtools intersect -header -u -a $input_VCF -b $input_BED | bgzip > $out_dir/$prefix.subset.vcf.gz # -u for unique record in VCF, otherwise multiple variants are output for overlapping introns
 tabix -p vcf $out_dir/$prefix.subset.vcf.gz
 
-echo $(gzip -d -c $out_dir/$prefix.subset.vcf.gz | wc -l) 'VCF lines after subsetting'
+echo $(gzip -d -c $out_dir/$prefix.subset.vcf.gz | grep -v '^#' | wc -l) 'variants after subsetting'
 echo $(date +%x_%r) 'Subsetting complete'
 
 ##################################
@@ -104,24 +104,24 @@ i=0
 
 # Go through every VCF sample name (they are ordered as they are in the VCF which is important for the index)
 while [[ $i -le $((${#vcfsamples[@]}-1)) ]]; do 
-	# Run custom function to check if the current VCF sample has been supplied as an affected sample
-	stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
-
 	# Start of the genotype filter string
 	genotype_filters+=" && FORMAT/GT[$i]='"
-
+		
+		# Run custom function to check if the current VCF sample has been supplied as an affected sample
+		stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
+		
 		# If the current VCF sample is affected
 		if [ $? == 0 ]; then
-			if [ "$inheritance_pattern" = "denovo" ]; then
+			if [[ $inheritance_pattern == "denovo" ]]; then
 				genotype_filters+="0/1"
-			elif [ "$inheritance_pattern" = "autrec" ]; then
+			elif [[ $inheritance_pattern == "autrec" ]]; then
 				genotype_filters+="1/1"
 			fi
 		# If the current VCF sample is not affected
 		else
-			if [ "$inheritance_pattern" = "denovo" ]; then
+			if [[ $inheritance_pattern == "denovo" ]]; then
 				genotype_filters+="0/0"
-			elif [ "$inheritance_pattern" = "autrec" ]; then
+			elif [[ $inheritance_pattern == "autrec" ]]; then
 				genotype_filters+="0/1"
 			fi
 		fi
@@ -139,7 +139,7 @@ genotype_filters=$(echo $genotype_filters | cut -c 4-)
 bcftools filter --threads 8 -i"$genotype_filters" $out_dir/$prefix.subset.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.vcf.gz
 tabix $out_dir/$prefix.subset.inheritancefilter.vcf.gz
 
-echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.vcf.gz | wc -l) 'VCF lines after familial filter'
+echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.vcf.gz | grep -v '^#' | wc -l) 'variants after familial filter'
 echo $(date +%x_%r) 'Familial filtering complete'
 
 ##################################
@@ -160,21 +160,37 @@ echo $(date +%x_%r) 'Beginning filtering'
 bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(DP)$max_DP && (mgrb_af$MGRB_AF || mgrb_af='.') && (gn_pm_af$gnomad_popmax_AF || gn_pm_af='.') && (cadd_phred$CADD_phred || cadd_phred='.')" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 
-echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | wc -l) 'VCF lines after filtering'
-echo $(date +%x_%r) 'Filtering complete' 
+echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
+echo $(date +%x_%r) 'Filtering complete'
 
 ##################################
-# STEP 5: Calculate the maximum MaxEntScan value for sliding windows around each variant
+# STEP 5: Output final list of variants as a spreadsheet-friendly TSV
 
-# Go through each line of the results VCF ignoring header lines
-gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | \
+bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/cadd_phred\t%INFO/mgrb_af\t%INFO/gn_pm_af\t%INFO/CSQ[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
+
+##################################
+# STEP 6: Calculate the maximum MaxEntScan value for sliding windows around each variant
+
+echo $(date +%x_%r) 'Beginning MaxEntScan calculation'
+
+# Go through each line of the results TSV
+cat $out_dir/$prefix.introme.tsv | \
 while read line; do
+	# If the line if the header line
+	if [ "${line:0:1}" == "#" ]; then
+		# Add to the header line
+		echo "$line"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_germline_value"$'\t'"5'_max_MaxEntScan_germline_sequence" > $out_dir/$prefix.introme.annotated.tsv
+		
+		# Don't do any further processing on this line
+		continue
+	fi
+	
 	max_maxentscan=''
 	max_maxentscan_sequence=''
 	max_maxentscan_coordinates=''
 	current_chr=$(echo "$line" | cut -f 1)
 	current_pos=$(echo "$line" | cut -f 2)
-	current_alt=$(echo "$line" | cut -f 5)
+	current_alt=$(echo "$line" | cut -f 4)
 	
 	# $i is the offset for determining the coordinate range
 	for i in {0..8}; do
@@ -198,18 +214,15 @@ while read line; do
 		fi
 	done
 	
-	# For the maximal MaxEntScore window sequence, calculate MaxEntScan for the germline sequence
+	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the germline sequence
 	current_splice_site_germline=$(samtools faidx $reference_genome $max_maxentscan_coordinates | grep -v '^>')
 	current_maxentscan_germline=$(echo $current_splice_site_germline | perl MaxEntScan/score5.pl - | cut -f 2)
 	
-	echo "Variant maximum MaxEntScan value: $max_maxentscan"
-	echo "Variant sequence: $max_maxentscan_sequence"
-	echo "Variant coordinates: $max_maxentscan_coordinates"
-	echo "Germline sequence: $current_splice_site_germline"
-	echo "Germline MaxEntScan value: $current_maxentscan_germline"
-	echo "##################"
+	echo "$line"$'\t'"$max_maxentscan"$'\t'"$max_maxentscan_sequence"$'\t'"$max_maxentscan_coordinates"$'\t'"$current_maxentscan_germline"$'\t'"$current_splice_site_germline" >> $out_dir/$prefix.introme.annotated.tsv
 	
 done
+
+echo $(date +%x_%r) 'MaxEntScan calculation complete'
 
 ##################################
 
