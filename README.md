@@ -43,7 +43,8 @@ Introme is developed on macOS and runs with the following dependencies which can
 * -i -- inheritance pattern, can be one of "denovo" or "autrec"
 * -p -- output prefix
 * -v -- path to VCF file
+* -r -- path to reference genome fasta file (must be indexed)
 
 ## Example
 
-./run\_introme.sh -b subsetting/UCSC\_introns.bed.gz -v input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz -p Fam1 -i denovo -a A001C
+./run\_introme.sh -b subsetting/UCSC\_introns.bed.gz -v input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz -p Fam1 -i denovo -a A001C -r annotations/hs37d5.fasta-index/genome.fa

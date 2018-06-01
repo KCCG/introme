@@ -164,6 +164,7 @@ echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.v
 echo $(date +%x_%r) 'Filtering complete' 
 
 ##################################
+# STEP 5: Calculate the maximum MaxEntScan value for sliding windows around each variant
 
 # Go through each line of the results VCF ignoring header lines
 gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | \
@@ -180,23 +181,33 @@ while read line; do
 		# Determine the putative splice site coordinate range
 		current_coordinate_range="$current_chr:"$(($current_pos - 8 + $i))"-"$(($current_pos + i))
 		
-		# Extract the putative splice site from the reference genome
+		# Extract the putative splice site sequence from the reference genome
 		current_splice_site=$(samtools faidx $reference_genome $current_coordinate_range | grep -v '^>')
 		
+		# Mutate the correct base in the extracted splice site to match the current variant
+		current_splice_site=${current_splice_site:0:(( 8 - $i ))}$current_alt${current_splice_site:(( 8 - $i + 1 ))}
+		
+		# Calculate MaxEntScan value
 		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score5.pl - | cut -f 2)
 		
-		# If this is the first iteration where a max MaxEntScan hasn't been set yet, set it
+		# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
 		if [ "$max_maxentscan" == "" ] || (( $(echo $current_maxentscan'>'$max_maxentscan | bc -l) )); then
 			max_maxentscan=$current_maxentscan
 			max_maxentscan_sequence=$current_splice_site
 			max_maxentscan_coordinates=$current_coordinate_range
 		fi
-		
 	done
 	
-	echo "Max: $max_maxentscan"
-	echo "Sequence: $max_maxentscan_sequence"
-	echo "Coordinates: $max_maxentscan_coordinates"
+	# For the maximal MaxEntScore window sequence, calculate MaxEntScan for the germline sequence
+	current_splice_site_germline=$(samtools faidx $reference_genome $max_maxentscan_coordinates | grep -v '^>')
+	current_maxentscan_germline=$(echo $current_splice_site_germline | perl MaxEntScan/score5.pl - | cut -f 2)
+	
+	echo "Variant maximum MaxEntScan value: $max_maxentscan"
+	echo "Variant sequence: $max_maxentscan_sequence"
+	echo "Variant coordinates: $max_maxentscan_coordinates"
+	echo "Germline sequence: $current_splice_site_germline"
+	echo "Germline MaxEntScan value: $current_maxentscan_germline"
+	echo "##################"
 	
 done
 
