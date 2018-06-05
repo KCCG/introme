@@ -53,7 +53,7 @@ while getopts "a:b:v:p:i:r:" opt; do
         r) reference_genome="$OPTARG";; # Path to the reference genome used for mapping
     esac
 done
-shift $((OPTIND -1)) # Remove parsed options and args from $@ list
+shift $(( $OPTIND - 1 )) # Remove parsed options and args from $@ list
 
 # Make sure each required argument has a non-empty value
 if [ -z $affected_samples ]; then
@@ -103,7 +103,7 @@ genotype_filters=""
 i=0
 
 # Go through every VCF sample name (they are ordered as they are in the VCF which is important for the index)
-while [[ $i -le $((${#vcfsamples[@]}-1)) ]]; do 
+while [[ $i -le $(( ${#vcfsamples[@]} - 1 )) ]]; do 
 	# Start of the genotype filter string
 	genotype_filters+=" && FORMAT/GT[$i]='"
 		
@@ -130,7 +130,7 @@ while [[ $i -le $((${#vcfsamples[@]}-1)) ]]; do
 	genotype_filters+="'"
 
 	# Iterate the $i variable
-	((i++))
+	(( i++ ))
 done
 
 # Cut the 4 first characters off the filter string (the " && ")
@@ -175,50 +175,93 @@ echo $(date +%x_%r) 'Beginning MaxEntScan calculation'
 
 # Go through each line of the results TSV
 cat $out_dir/$prefix.introme.tsv | \
+
 while read line; do
 	# If the line if the header line
-	if [ "${line:0:1}" == "#" ]; then
+	if [[ ${line:0:1} == "#" ]]; then
 		# Add to the header line
-		echo "$line"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_germline_value"$'\t'"5'_max_MaxEntScan_germline_sequence" > $out_dir/$prefix.introme.annotated.tsv
+		echo "$line"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_germline_value"$'\t'"3'_max_MaxEntScan_value"$'\t'"3'_max_MaxEntScan_germline_value"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"3'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_germline_sequence"$'\t'"3'_max_MaxEntScan_sequence"$'\t'"3'_max_MaxEntScan_germline_sequence" > $out_dir/$prefix.introme.annotated.tsv
 		
 		# Don't do any further processing on this line
 		continue
 	fi
 	
-	max_maxentscan=''
-	max_maxentscan_sequence=''
-	max_maxentscan_coordinates=''
+	# Current variant information
 	current_chr=$(echo "$line" | cut -f 1)
 	current_pos=$(echo "$line" | cut -f 2)
 	current_alt=$(echo "$line" | cut -f 4)
 	
+	# Calculate the maximum range we are interested in (corresponding to the 23-base windows)
+	current_max_coordinate_range="$current_chr:"$(( $current_pos - 22 ))"-"$(( $current_pos + 22 ))
+	
+	# Fetch the reference genome sequence once and subset it for windows
+	current_max_reference_context=$(samtools faidx $reference_genome $current_max_coordinate_range | grep -v '^>')
+	
+	##################################
+	
+	# 5' MaxEntScan score calculation
+	
+	max_maxentscan_5=''
+	max_maxentscan_sequence_5=''
+	max_maxentscan_coordinates_5=''
+	
 	# $i is the offset for determining the coordinate range
 	for i in {0..8}; do
 		# Determine the putative splice site coordinate range
-		current_coordinate_range="$current_chr:"$(($current_pos - 8 + $i))"-"$(($current_pos + i))
+		current_coordinate_range="$current_chr:"$(( $current_pos - 8 + $i ))"-"$(( $current_pos + $i ))
 		
-		# Extract the putative splice site sequence from the reference genome
-		current_splice_site=$(samtools faidx $reference_genome $current_coordinate_range | grep -v '^>')
-		
-		# Mutate the correct base in the extracted splice site to match the current variant
-		current_splice_site=${current_splice_site:0:(( 8 - $i ))}$current_alt${current_splice_site:(( 8 - $i + 1 ))}
+		# Extract the current splice site sequence and mutate the correct base corresponding to the variant
+		current_splice_site=${current_max_reference_context:(( 14 + $i )):(( 8 - $i ))}$current_alt${current_max_reference_context:23:$i} # The numbers here are offsetting to ignore the full 23 base window and focus on the 9 base window
 		
 		# Calculate MaxEntScan value
 		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score5.pl - | cut -f 2)
 		
 		# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
-		if [ "$max_maxentscan" == "" ] || (( $(echo $current_maxentscan'>'$max_maxentscan | bc -l) )); then
-			max_maxentscan=$current_maxentscan
-			max_maxentscan_sequence=$current_splice_site
-			max_maxentscan_coordinates=$current_coordinate_range
+		if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan'>'$max_maxentscan_5 | bc -l) )); then
+			max_maxentscan_5=$current_maxentscan
+			max_maxentscan_sequence_5=$current_splice_site
+			max_maxentscan_coordinates_5=$current_coordinate_range
 		fi
 	done
 	
 	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the germline sequence
-	current_splice_site_germline=$(samtools faidx $reference_genome $max_maxentscan_coordinates | grep -v '^>')
-	current_maxentscan_germline=$(echo $current_splice_site_germline | perl MaxEntScan/score5.pl - | cut -f 2)
+	max_maxentscan_sequence_5_germline=$(samtools faidx $reference_genome $max_maxentscan_coordinates_5 | grep -v '^>')
+	max_maxentscan_5_germline=$(echo $max_maxentscan_sequence_5_germline | perl MaxEntScan/score5.pl - | cut -f 2)
 	
-	echo "$line"$'\t'"$max_maxentscan"$'\t'"$max_maxentscan_sequence"$'\t'"$max_maxentscan_coordinates"$'\t'"$current_maxentscan_germline"$'\t'"$current_splice_site_germline" >> $out_dir/$prefix.introme.annotated.tsv
+	##################################
+	
+	# 3' MaxEntScan score calculation
+	
+	max_maxentscan_3=''
+	max_maxentscan_sequence_3=''
+	max_maxentscan_coordinates_3=''
+	
+	# $i is the offset for determining the coordinate range
+	for i in {0..22}; do
+		# Determine the putative splice site coordinate range
+		current_coordinate_range="$current_chr:"$(( $current_pos - 22 + $i ))"-"$(( $current_pos + $i ))
+		
+		# Extract the current splice site sequence and mutate the correct base corresponding to the variant
+		current_splice_site=${current_max_reference_context:(( 0 + $i )):(( 22 - $i ))}$current_alt${current_max_reference_context:23:$i}
+		
+		# Calculate MaxEntScan value
+		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score3.pl - | cut -f 2)
+		
+		# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
+		if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan'>'$max_maxentscan_3 | bc -l) )); then
+			max_maxentscan_3=$current_maxentscan
+			max_maxentscan_sequence_3=$current_splice_site
+			max_maxentscan_coordinates_3=$current_coordinate_range
+		fi
+	done
+	
+	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the germline sequence
+	max_maxentscan_sequence_3_germline=$(samtools faidx $reference_genome $max_maxentscan_coordinates_3 | grep -v '^>')
+	max_maxentscan_3_germline=$(echo $max_maxentscan_sequence_3_germline | perl MaxEntScan/score3.pl - | cut -f 2)
+	
+	##################################
+	
+	echo "$line"$'\t'"$max_maxentscan_5"$'\t'"$max_maxentscan_5_germline"$'\t'"$max_maxentscan_3"$'\t'"$max_maxentscan_3_germline"$'\t'"$max_maxentscan_coordinates_5"$'\t'"$max_maxentscan_coordinates_3"$'\t'"$max_maxentscan_sequence_5"$'\t'"$max_maxentscan_sequence_5_germline"$'\t'"$max_maxentscan_sequence_3"$'\t'"$max_maxentscan_sequence_3_germline" >> $out_dir/$prefix.introme.annotated.tsv
 	
 done
 

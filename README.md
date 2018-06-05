@@ -20,7 +20,7 @@ Introme is developed on macOS and runs with the following dependencies which can
 * bcftools
 * bgzip
 * tabix
-* MaxEntScan (supplied from http://genes.mit.edu/burgelab/maxent/download/)
+* MaxEntScan (supplied with Introme from http://genes.mit.edu/burgelab/maxent/download/)
 
 ## The VCF file supplied should be
 
@@ -43,7 +43,7 @@ Introme is developed on macOS and runs with the following dependencies which can
 * -i -- inheritance pattern, can be one of "denovo" or "autrec"
 * -p -- output prefix
 * -v -- path to VCF file
-* -r -- path to reference genome fasta file (must be indexed)
+* -r -- path to reference genome fasta file (must be indexed with samtools)
 
 ## Example
 
