@@ -166,7 +166,7 @@ echo $(date +%x_%r) 'Filtering complete'
 ##################################
 # STEP 5: Output final list of variants as a spreadsheet-friendly TSV
 
-bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/cadd_phred\t%INFO/mgrb_af\t%INFO/gn_pm_af\t%INFO/CSQ[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
+bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/cadd_phred\t%INFO/mgrb_af\t%INFO/gn_pm_af\t%INFO/CSQ\t%INFO/SPIDEX_dpsi_max_tissue\t%INFO/SPIDEX_dpsi_zscore\t%INFO/dbscSNV_ada_score\t%INFO/dbscSNV_rf_score[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
 
 ##################################
 # STEP 6: Calculate the maximum MaxEntScan value for sliding windows around each variant

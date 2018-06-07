@@ -59,14 +59,15 @@ names=["mgrb_ac", "mgrb_af"]
 #ops=["self", "self"]
 #names=["LaBranchoR_score", "LaBranchoR_strand"]
 
-#[[annotation]]
-#file="annotations/merged.dbscSNV1.1.gz"
-#fields = ["ada_score", "rf_score"]
-#ops=["self", "self"]
-#names=["ada_score", "rf_score"]
+[[annotation]]
+file="annotations/dbscSNV1.1.vcf.gz"
+fields = ["ada_score", "rf_score"]
+ops=["self", "self"]
+names=["dbscSNV_ada_score", "dbscSNV_rf_score"]
 
-#[[annotation]]
-#file="annotations/hg19_spidex.gz"
-#fields = ["ada_score", "rf_score"]
-#ops=["self", "self"]
-#names=["ada_score", "rf_score"]
+[[annotation]]
+file="annotations/hg19_spidex.sorted.vcf.gz"
+fields = ["dpsi_max_tissue", "dpsi_zscore"]
+ops=["self", "self"]
+names=["SPIDEX_dpsi_max_tissue", "SPIDEX_dpsi_zscore"]
+
