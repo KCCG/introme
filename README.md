@@ -33,6 +33,7 @@ Introme is developed on macOS and runs with the following dependencies which can
 * CADD v1.3 VCF created using the instructions at: https://github.com/brentp/vcfanno/blob/master/docs/examples/cadd.md
 * gnomad.genomes.sites.merged.AF\_AC_AN\_only.vcf.gz
 * MGRB variant allele frequencies (these are not public so remove this annotation manually)
+* Branchpointer (Machine-learning annotation of human splicing branchpoints) from https://osf.io/hrqvq/
 
 # Using Introme
 

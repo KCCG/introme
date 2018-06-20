@@ -1,0 +1,17 @@
+Converting branchpoints CSV to VCF:
+
+Original downloaded file is gencode_v26_branchpoints.csv, need to do some processing on it and convert it to a VCF to use vcfanno. Perl script does this.
+
+perl annotations/parse_branchpoints_to_vcf.pl annotations/gencode_v26_branchpoints.csv
+
+grep '^#' annotations/gencode_v26_branchpoints.csv.vcf > annotations/gencode_v26_branchpoints.csv.vcf.header && grep -v '^#' annotations/gencode_v26_branchpoints.csv.vcf | sort -k 1,1 -k2,2n -V -s | (cat annotations/gencode_v26_branchpoints.csv.vcf.header && cat) | bgzip > annotations/gencode_v26_branchpoints.csv.vcf.gz
+
+rm annotations/gencode_v26_branchpoints.csv.vcf
+
+tabix -p vcf annotations/gencode_v26_branchpoints.csv.vcf.gz
+
+# Liftover from hg38 to hg19
+java -Xmx18000m -jar ~/Desktop/picard.jar LiftoverVcf I=~/Desktop/gencode_v26_branchpoints.csv.vcf.gz  O=~/Desktop/gencode_v26_branchpoints.csv.liftedtohg19.vcf.gz CHAIN=~/Desktop/hg38ToHg19.over.chain.gz REJECT=~/Desktop/rejected.vcf R=~/Desktop/hg19.fa
+
+# Strip out "chr" at the start of chromosome names and sort
+zgrep '^#' annotations/gencode_v26_branchpoints.csv.liftedtohg19.vcf.gz | sed -e 's/##contig=<ID=chr/##contig=<ID=/' > annotations/gencode_v26_branchpoints.csv.liftedtohg19.vcf.header && zgrep -v '^#' annotations/gencode_v26_branchpoints.csv.liftedtohg19.vcf.gz | sed -e 's/^chr//' | sort -k 1,1 -k2,2n -V -s | (cat annotations/gencode_v26_branchpoints.csv.liftedtohg19.vcf.header && cat) | bgzip > annotations/gencode_v26_branchpoints.csv.liftedtohg19.sorted.vcf.gz

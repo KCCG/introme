@@ -166,10 +166,19 @@ echo $(date +%x_%r) 'Filtering complete'
 ##################################
 # STEP 5: Output final list of variants as a spreadsheet-friendly TSV
 
-bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/cadd_phred\t%INFO/mgrb_af\t%INFO/gn_pm_af\t%INFO/CSQ\t%INFO/SPIDEX_dpsi_max_tissue\t%INFO/SPIDEX_dpsi_zscore\t%INFO/dbscSNV_ada_score\t%INFO/dbscSNV_rf_score[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
+bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/cadd_phred\t%INFO/mgrb_af\t%INFO/gn_pm_af\t%INFO/CSQ\t%INFO/SPIDEX_dpsi_max_tissue\t%INFO/SPIDEX_dpsi_zscore\t%INFO/dbscSNV_ada_score\t%INFO/dbscSNV_rf_score\t%INFO/branchpointer_branchpoint_prob\t%INFO/branchpointer_U2_binding_energy[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
+
+# Remove the '[<number]' column numbers added by bcftools query to column names
+grep '^#' $out_dir/$prefix.introme.tsv | sed "s/\[[0-9]*\]//g" > $out_dir/$prefix.introme.tsv.header
+grep -v '^#' $out_dir/$prefix.introme.tsv >> $out_dir/$prefix.introme.tsv.header
+mv $out_dir/$prefix.introme.tsv.header $out_dir/$prefix.introme.tsv
+
+# Sort by chromosome and coordinate
+sort -k1,1n -k2,2n $out_dir/$prefix.introme.tsv > $out_dir/$prefix.introme.sorted.tsv
+mv $out_dir/$prefix.introme.sorted.tsv $out_dir/$prefix.introme.tsv
 
 ##################################
-# STEP 6: Calculate the maximum MaxEntScan value for sliding windows around each variant
+# STEP 6: Calculate the maximum 3' and 5' MaxEntScan value for sliding windows around each variant
 
 echo $(date +%x_%r) 'Beginning MaxEntScan calculation'
 
@@ -177,7 +186,7 @@ echo $(date +%x_%r) 'Beginning MaxEntScan calculation'
 cat $out_dir/$prefix.introme.tsv | \
 
 while read line; do
-	# If the line if the header line
+	# If the line is the header line
 	if [[ ${line:0:1} == "#" ]]; then
 		# Add to the header line
 		echo "$line"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_germline_value"$'\t'"3'_max_MaxEntScan_value"$'\t'"3'_max_MaxEntScan_germline_value"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"3'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_germline_sequence"$'\t'"3'_max_MaxEntScan_sequence"$'\t'"3'_max_MaxEntScan_germline_sequence" > $out_dir/$prefix.introme.annotated.tsv

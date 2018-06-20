@@ -1,14 +1,4 @@
-#file used by VCFanno as instruction on how to annotate your VCF/s. 
-
-##Add info here about what all the files are and why there were included##
-#MGRB is a Garvan/KCCG internal VCF based on many WGS runs. This is a great control for removing common artefacts and common variants from Genome.One WGS data, but is not available (nor relevent) to the general public.
-#gnomad.genomes.sites.merged.AF_AC_AN_only.vcf.gz is a subset of the gnomAD dataset.
-#CADD (metascore of of various pathogenicity predictions:GERP, phastCons, phyloP, Grantham, SIFT, polyphen, and some regulatory information)
-#DANN is a machine learning model of pathogenicity.
-##Eigen
-##gwava
-##LaBranchoR --> LaBranchoR predicts RNA splicing branchpoints. LaBranchoR uses only the sequence 1 to 70 base pairs upstream of a three prime splice site as a feature. 
-##dbscSNV1.1--> includes all potential human SNVs within splicing consensus regions (−3 to +8 at the 5’ splice site and −12 to +2 at the 3’ splice site), i.e. scSNVs, related functional annotations and two ensemble prediction scores (ada, rf) for predicting their potential of altering splicing. 
+# File used by VCFanno to define how a VCF file should be annotated
 
 [[annotation]]
 file="annotations/gnomad.genomes.sites.merged.AF_AC_AN_only.vcf.gz"
@@ -21,43 +11,13 @@ file="annotations/cadd_v1.3.vcf.gz"
 names=["cadd_phred", "cadd_raw"]
 ops=["self", "self"]
 fields=["phred", "raw"]
-###used process outlined on https://github.com/brentp/vcfanno/blob/master/docs/examples/cadd.md to create CADD vcf file from original download
+# Used process outlined on https://github.com/brentp/vcfanno/blob/master/docs/examples/cadd.md to create CADD vcf file from original download
 
 [[annotation]]
 file="annotations/reheadered.MGRB.vcf.gz"
 fields=["AC", "AF"]
 ops=["self", "self"]
 names=["mgrb_ac", "mgrb_af"]
-
-#[[annotation]]
-#file="annotations/DANN_whole_genome_SNVs.tsv.bgz"
-#columns = [5]
-#names=["DANN_score"]
-#ops=["self"]
-
-#[[annotation]]
-#file="annotations/eigen_promoters_sort.gz"
-#columns = [4]
-#names=["eigen"]
-#ops=["self"]
-
-#[[annotation]]
-#file="annotations/gwava_db_csv.tgz"
-#fields = ["region_score", "tss_score", "unmatched_score"]
-#ops=["self", "self", "self"]
-#names=["GWAVA_region", "GWAVA_TSS", "GWAVA_unmatched"]
-
-#[[annotation]]
-#file="annotations/fathmm-MKL_Current_zerobased.tab.gz"
-#columns = [6, 7, 8, 9]
-#ops=["self", "self", "self", "self"]
-#names=["fathmm-MKL_non-coding", "fathmm-MKL_noc-coding_groups", "fathmm-MKL_coding_score", "fathmm-MKL_coding_groups"]
-
-#[[annotation]]
-#file="annotations/LaBranchoR.topscoring3PrimeSS.gencode_v19.hg19.top.bed.gz"
-#columns = [4, 5]
-#ops=["self", "self"]
-#names=["LaBranchoR_score", "LaBranchoR_strand"]
 
 [[annotation]]
 file="annotations/dbscSNV1.1.vcf.gz"
@@ -71,3 +31,8 @@ fields = ["dpsi_max_tissue", "dpsi_zscore"]
 ops=["self", "self"]
 names=["SPIDEX_dpsi_max_tissue", "SPIDEX_dpsi_zscore"]
 
+[[annotation]]
+file="annotations/gencode_v26_branchpoints.csv.liftedtohg19.sorted.vcf.gz"
+fields = ["branchpoint_prob", "U2_binding_energy"]
+ops=["self", "self"]
+names=["branchpointer_branchpoint_prob", "branchpointer_U2_binding_energy"]
