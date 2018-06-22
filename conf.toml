@@ -4,11 +4,11 @@
 file="annotations/gnomad.genomes.sites.merged.AF_AC_AN_only.vcf.gz"
 fields = ["AF", "AC", "AN", "POPMAX", "AF_POPMAX", "AC_POPMAX", "AN_POPMAX"]
 ops=["self", "self", "self", "self", "self", "self", "self"]
-names=["gn_af", "gn_ac", "gn_an", "gn_popmax", "gn_pm_af", "gn_pm_ac", "gn_pm_an"]
+names=["gnomAD_AF", "gnomAD_AC", "gnomAD_AN", "gnomAD_PopMax", "gnomAD_PM_AF", "gnomAD_PM_AC", "gnomAD_PM_AN"]
 
 [[annotation]]
 file="annotations/cadd_v1.3.vcf.gz"
-names=["cadd_phred", "cadd_raw"]
+names=["CADD_Phred", "CADD_Raw"]
 ops=["self", "self"]
 fields=["phred", "raw"]
 # Used process outlined on https://github.com/brentp/vcfanno/blob/master/docs/examples/cadd.md to create CADD vcf file from original download
@@ -17,22 +17,28 @@ fields=["phred", "raw"]
 file="annotations/reheadered.MGRB.vcf.gz"
 fields=["AC", "AF"]
 ops=["self", "self"]
-names=["mgrb_ac", "mgrb_af"]
+names=["MGRB_AC", "MGRB_AF"]
 
 [[annotation]]
 file="annotations/dbscSNV1.1.vcf.gz"
 fields = ["ada_score", "rf_score"]
 ops=["self", "self"]
-names=["dbscSNV_ada_score", "dbscSNV_rf_score"]
+names=["dbscSNV_AdaBoost_Score", "dbscSNV_RandomForest_Score"]
 
 [[annotation]]
 file="annotations/hg19_spidex.sorted.vcf.gz"
 fields = ["dpsi_max_tissue", "dpsi_zscore"]
 ops=["self", "self"]
-names=["SPIDEX_dpsi_max_tissue", "SPIDEX_dpsi_zscore"]
+names=["SPIDEX_dPSI_Max_Tissue", "SPIDEX_dPSI_Zscore"]
 
 [[annotation]]
 file="annotations/gencode_v26_branchpoints.csv.liftedtohg19.sorted.vcf.gz"
 fields = ["branchpoint_prob", "U2_binding_energy"]
 ops=["self", "self"]
-names=["branchpointer_branchpoint_prob", "branchpointer_U2_binding_energy"]
+names=["Branchpointer_Branchpoint_Prob", "Branchpointer_U2_Binding_Energy"]
+
+[[annotation]]
+file="annotations/canonical_gencode_final.sorted.bed.gz"
+columns = [4]
+ops=["self"]
+names=["Gene_Symbol"]

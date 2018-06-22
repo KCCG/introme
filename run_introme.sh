@@ -36,7 +36,7 @@ out_dir='./output'
 # Hard filter cutoffs for each annotation, filtering thresholds will depend on your application, we urge you to carefully consider these 
 MGRB_AF='<=0.01' # Minimum MGRB allele frequency (healthy Australian population)
 gnomad_popmax_AF='<=0.01' # Minimum gnomAD allele frequency in the population with the highest allele frequency in gnomAD
-CADD_phred='>=10' # Minimum CADD score (phred-scaled)
+CADD_Phred='>=10' # Minimum CADD score (phred-scaled)
 min_QUAL='>=200' # The QUAL VCF field
 max_DP='>=20' # The sample with the highest depth in the VCF must have a higher depth than this value
 
@@ -157,7 +157,7 @@ echo $(date +%x_%r) 'Annotation complete'
 
 echo $(date +%x_%r) 'Beginning filtering'
 
-bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(DP)$max_DP && (mgrb_af$MGRB_AF || mgrb_af='.') && (gn_pm_af$gnomad_popmax_AF || gn_pm_af='.') && (cadd_phred$CADD_phred || cadd_phred='.')" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
+bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(DP)$max_DP && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 
 echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
@@ -166,7 +166,7 @@ echo $(date +%x_%r) 'Filtering complete'
 ##################################
 # STEP 5: Output final list of variants as a spreadsheet-friendly TSV
 
-bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/cadd_phred\t%INFO/mgrb_af\t%INFO/gn_pm_af\t%INFO/CSQ\t%INFO/SPIDEX_dpsi_max_tissue\t%INFO/SPIDEX_dpsi_zscore\t%INFO/dbscSNV_ada_score\t%INFO/dbscSNV_rf_score\t%INFO/branchpointer_branchpoint_prob\t%INFO/branchpointer_U2_binding_energy[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
+bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/Gene_Symbol\t%INFO/CADD_Phred\t%INFO/MGRB_AF\t%INFO/gnomAD_PM_AF\t%INFO/CSQ\t%INFO/SPIDEX_dPSI_Max_Tissue\t%INFO/SPIDEX_dPSI_Zscore\t%INFO/dbscSNV_AdaBoost_Score\t%INFO/dbscSNV_RandomForest_Score\t%INFO/Branchpointer_Branchpoint_Prob\t%INFO/Branchpointer_U2_Binding_Energy[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
 
 # Remove the '[<number]' column numbers added by bcftools query to column names
 grep '^#' $out_dir/$prefix.introme.tsv | sed "s/\[[0-9]*\]//g" > $out_dir/$prefix.introme.tsv.header
