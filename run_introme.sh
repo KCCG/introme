@@ -189,7 +189,7 @@ while read line; do
 	# If the line is the header line
 	if [[ ${line:0:1} == "#" ]]; then
 		# Add to the header line
-		echo "$line"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_germline_value"$'\t'"3'_max_MaxEntScan_value"$'\t'"3'_max_MaxEntScan_germline_value"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"3'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_germline_sequence"$'\t'"3'_max_MaxEntScan_sequence"$'\t'"3'_max_MaxEntScan_germline_sequence" > $out_dir/$prefix.introme.annotated.tsv
+		echo "$line"$'\t'"MaxEntScan_Consequence"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_reference_value"$'\t'"3'_max_MaxEntScan_value"$'\t'"3'_max_MaxEntScan_reference_value"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"3'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_reference_sequence"$'\t'"3'_max_MaxEntScan_sequence"$'\t'"3'_max_MaxEntScan_reference_sequence" > $out_dir/$prefix.introme.annotated.tsv
 		
 		# Don't do any further processing on this line
 		continue
@@ -213,6 +213,8 @@ while read line; do
 	max_maxentscan_5=''
 	max_maxentscan_sequence_5=''
 	max_maxentscan_coordinates_5=''
+	max_maxentscan_difference_5=''
+	max_maxentscan_consequence_5=''
 	
 	# $i is the offset for determining the coordinate range
 	for i in {0..8}; do
@@ -226,16 +228,34 @@ while read line; do
 		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score5.pl - | cut -f 2)
 		
 		# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
-		if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan'>'$max_maxentscan_5 | bc -l) )); then
+		if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_5 | bc -l) )); then
 			max_maxentscan_5=$current_maxentscan
 			max_maxentscan_sequence_5=$current_splice_site
 			max_maxentscan_coordinates_5=$current_coordinate_range
 		fi
 	done
 	
-	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the germline sequence
-	max_maxentscan_sequence_5_germline=$(samtools faidx $reference_genome $max_maxentscan_coordinates_5 | grep -v '^>')
-	max_maxentscan_5_germline=$(echo $max_maxentscan_sequence_5_germline | perl MaxEntScan/score5.pl - | cut -f 2)
+	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the reference sequence
+	max_maxentscan_sequence_5_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_5 | grep -v '^>')
+	max_maxentscan_5_reference=$(echo $max_maxentscan_sequence_5_reference | perl MaxEntScan/score5.pl - | cut -f 2)
+	
+	# Calculate the absolute difference between the reference and variant scores (i.e. take negative numbers into account)
+	max_maxentscan_difference_5=$(echo $max_maxentscan_5" - "$max_maxentscan_5_reference | bc -l | sed 's/-//') # Force the difference to be positive so it's an absolute difference
+	
+	# Determine the potential MaxEntScan consequence (i.e. likelihood of a new splice site to replace the canonical one)
+	# If the score is below the reference score or below zero
+	if (( $(echo $max_maxentscan_5' <= '$max_maxentscan_5_reference | bc -l) )) || (( $(echo $max_maxentscan_5' < 0' | bc -l) )); then
+		max_maxentscan_consequence_5='NONE'
+	# If the score is 0-4 and the difference to the reference score is >=4
+	elif (( $(echo $max_maxentscan_5' < 4' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 4' | bc -l) )); then
+		max_maxentscan_consequence_5='LOW'
+	# If the score is 4-10 and the difference to the reference score is >=4
+	elif (( $(echo $max_maxentscan_5' < 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 4' | bc -l) )); then
+		max_maxentscan_consequence_5='MED'
+	# If the score is greater than 10 and the difference to the reference score is >= 6
+	elif (( $(echo $max_maxentscan_5' >= 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 6' | bc -l) )); then
+		max_maxentscan_consequence_5='HIGH'
+	fi
 	
 	##################################
 	
@@ -244,6 +264,8 @@ while read line; do
 	max_maxentscan_3=''
 	max_maxentscan_sequence_3=''
 	max_maxentscan_coordinates_3=''
+	max_maxentscan_difference_3=''
+	max_maxentscan_consequence_3=''
 	
 	# $i is the offset for determining the coordinate range
 	for i in {0..22}; do
@@ -257,20 +279,54 @@ while read line; do
 		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score3.pl - | cut -f 2)
 		
 		# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
-		if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan'>'$max_maxentscan_3 | bc -l) )); then
+		if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_3 | bc -l) )); then
 			max_maxentscan_3=$current_maxentscan
 			max_maxentscan_sequence_3=$current_splice_site
 			max_maxentscan_coordinates_3=$current_coordinate_range
 		fi
 	done
 	
-	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the germline sequence
-	max_maxentscan_sequence_3_germline=$(samtools faidx $reference_genome $max_maxentscan_coordinates_3 | grep -v '^>')
-	max_maxentscan_3_germline=$(echo $max_maxentscan_sequence_3_germline | perl MaxEntScan/score3.pl - | cut -f 2)
+	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the reference sequence
+	max_maxentscan_sequence_3_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_3 | grep -v '^>')
+	max_maxentscan_3_reference=$(echo $max_maxentscan_sequence_3_reference | perl MaxEntScan/score3.pl - | cut -f 2)
+	
+	# Calculate the absolute difference between the reference and variant scores (i.e. take negative numbers into account)
+	max_maxentscan_difference_3=$(echo $max_maxentscan_3" - "$max_maxentscan_3_reference | bc -l | sed 's/-//') # Force the difference to be positive so it's an absolute difference
+	
+	# Determine the potential MaxEntScan consequence (i.e. likelihood of a new splice site to replace the canonical one)
+	# If the score is below the reference score or below zero
+	if (( $(echo $max_maxentscan_3' <= '$max_maxentscan_3_reference | bc -l) )) || (( $(echo $max_maxentscan_3' < 0' | bc -l) )); then
+		max_maxentscan_consequence_3='NONE'
+	# If the score is 0-4 and the difference to the reference score is >=4
+	elif (( $(echo $max_maxentscan_3' < 4' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 4' | bc -l) )); then
+		max_maxentscan_consequence_3='LOW'
+	# If the score is 4-10 and the difference to the reference score is >=4
+	elif (( $(echo $max_maxentscan_3' < 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 4' | bc -l) )); then
+		max_maxentscan_consequence_3='MED'
+	# If the score is greater than 10 and the difference to the reference score is >= 6
+	elif (( $(echo $max_maxentscan_3' >= 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 6' | bc -l) )); then
+		max_maxentscan_consequence_3='HIGH'
+	fi
 	
 	##################################
 	
-	echo "$line"$'\t'"$max_maxentscan_5"$'\t'"$max_maxentscan_5_germline"$'\t'"$max_maxentscan_3"$'\t'"$max_maxentscan_3_germline"$'\t'"$max_maxentscan_coordinates_5"$'\t'"$max_maxentscan_coordinates_3"$'\t'"$max_maxentscan_sequence_5"$'\t'"$max_maxentscan_sequence_5_germline"$'\t'"$max_maxentscan_sequence_3"$'\t'"$max_maxentscan_sequence_3_germline" >> $out_dir/$prefix.introme.annotated.tsv
+	# Determine the maximum MaxEntScan consequence
+	
+	max_maxentscan_consequence=''
+	
+	if [[ $max_maxentscan_consequence_5 == 'HIGH' ]] || [[ $max_maxentscan_consequence_3 == 'HIGH' ]]; then
+		max_maxentscan_consequence='HIGH'
+	elif [[ $max_maxentscan_consequence_5 == 'MED' ]] || [[ $max_maxentscan_consequence_3 == 'MED' ]]; then
+		max_maxentscan_consequence='MED'
+	elif [[ $max_maxentscan_consequence_5 == 'LOW' ]] || [[ $max_maxentscan_consequence_3 == 'LOW' ]]; then
+		max_maxentscan_consequence='LOW'
+	else
+		max_maxentscan_consequence='NONE'
+	fi
+	
+	##################################
+	
+	echo "$line"$'\t'"$max_maxentscan_consequence"$'\t'"$max_maxentscan_5"$'\t'"$max_maxentscan_5_reference"$'\t'"$max_maxentscan_3"$'\t'"$max_maxentscan_3_reference"$'\t'"$max_maxentscan_coordinates_5"$'\t'"$max_maxentscan_coordinates_3"$'\t'"$max_maxentscan_sequence_5"$'\t'"$max_maxentscan_sequence_5_reference"$'\t'"$max_maxentscan_sequence_3"$'\t'"$max_maxentscan_sequence_3_reference" >> $out_dir/$prefix.introme.annotated.tsv
 	
 done
 
