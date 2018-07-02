@@ -36,7 +36,7 @@ out_dir='./output'
 # Hard filter cutoffs for each annotation, filtering thresholds will depend on your application, we urge you to carefully consider these 
 MGRB_AF='<=0.01' # Minimum MGRB allele frequency (healthy Australian population)
 gnomad_popmax_AF='<=0.01' # Minimum gnomAD allele frequency in the population with the highest allele frequency in gnomAD
-CADD_Phred='>=10' # Minimum CADD score (phred-scaled)
+CADD_Phred='>=6' # Minimum CADD score (phred-scaled)
 min_QUAL='>=200' # The QUAL VCF field
 max_DP='>=20' # The sample with the highest depth in the VCF must have a higher depth than this value
 
@@ -180,157 +180,238 @@ mv $out_dir/$prefix.introme.sorted.tsv $out_dir/$prefix.introme.tsv
 ##################################
 # STEP 6: Calculate the maximum 3' and 5' MaxEntScan value for sliding windows around each variant
 
-echo $(date +%x_%r) 'Beginning MaxEntScan calculation'
+echo $(date +%x_%r) 'Beginning MaxEntScan calculation, number of variants to process: '$(cat $out_dir/$prefix.introme.tsv | wc -l)
+
+# Number of lines processed for displaying progress to the user
+num_lines_processed=0
 
 # Go through each line of the results TSV
 cat $out_dir/$prefix.introme.tsv | \
 
 while read line; do
-	# If the line is the header line
-	if [[ ${line:0:1} == "#" ]]; then
-		# Add to the header line
-		echo "$line"$'\t'"MaxEntScan_Consequence"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_reference_value"$'\t'"3'_max_MaxEntScan_value"$'\t'"3'_max_MaxEntScan_reference_value"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"3'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_reference_sequence"$'\t'"3'_max_MaxEntScan_sequence"$'\t'"3'_max_MaxEntScan_reference_sequence" > $out_dir/$prefix.introme.annotated.tsv
-		
-		# Don't do any further processing on this line
-		continue
-	fi
-	
-	# Current variant information
-	current_chr=$(echo "$line" | cut -f 1)
-	current_pos=$(echo "$line" | cut -f 2)
-	current_alt=$(echo "$line" | cut -f 4)
-	
-	# Calculate the maximum range we are interested in (corresponding to the 23-base windows)
-	current_max_coordinate_range="$current_chr:"$(( $current_pos - 22 ))"-"$(( $current_pos + 22 ))
-	
-	# Fetch the reference genome sequence once and subset it for windows
-	current_max_reference_context=$(samtools faidx $reference_genome $current_max_coordinate_range | grep -v '^>')
-	
-	##################################
-	
-	# 5' MaxEntScan score calculation
-	
-	max_maxentscan_5=''
-	max_maxentscan_sequence_5=''
-	max_maxentscan_coordinates_5=''
-	max_maxentscan_difference_5=''
-	max_maxentscan_consequence_5=''
-	
-	# $i is the offset for determining the coordinate range
-	for i in {0..8}; do
-		# Determine the putative splice site coordinate range
-		current_coordinate_range="$current_chr:"$(( $current_pos - 8 + $i ))"-"$(( $current_pos + $i ))
-		
-		# Extract the current splice site sequence and mutate the correct base corresponding to the variant
-		current_splice_site=${current_max_reference_context:(( 14 + $i )):(( 8 - $i ))}$current_alt${current_max_reference_context:23:$i} # The numbers here are offsetting to ignore the full 23 base window and focus on the 9 base window
-		
-		# Calculate MaxEntScan value
-		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score5.pl - | cut -f 2)
-		
-		# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
-		if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_5 | bc -l) )); then
-			max_maxentscan_5=$current_maxentscan
-			max_maxentscan_sequence_5=$current_splice_site
-			max_maxentscan_coordinates_5=$current_coordinate_range
-		fi
+	# If the current number of running processes is below a certain number, wait to process further lines
+	# Processing each line uses 107 processes on one core (currently, this can change!) so use this as an indicator of how many cores this will simultaneously use
+	while [[ $(jobs -r | wc -l) -ge 700 ]]; do
+		sleep 1
 	done
 	
-	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the reference sequence
-	max_maxentscan_sequence_5_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_5 | grep -v '^>')
-	max_maxentscan_5_reference=$(echo $max_maxentscan_sequence_5_reference | perl MaxEntScan/score5.pl - | cut -f 2)
+	# Iterate the number of lines processed
+	((num_lines_processed++))
 	
-	# Calculate the absolute difference between the reference and variant scores (i.e. take negative numbers into account)
-	max_maxentscan_difference_5=$(echo $max_maxentscan_5" - "$max_maxentscan_5_reference | bc -l | sed 's/-//') # Force the difference to be positive so it's an absolute difference
-	
-	# Determine the potential MaxEntScan consequence (i.e. likelihood of a new splice site to replace the canonical one)
-	# If the score is below the reference score or below zero
-	if (( $(echo $max_maxentscan_5' <= '$max_maxentscan_5_reference | bc -l) )) || (( $(echo $max_maxentscan_5' < 0' | bc -l) )); then
-		max_maxentscan_consequence_5='NONE'
-	# If the score is 0-4 and the difference to the reference score is >=4
-	elif (( $(echo $max_maxentscan_5' < 4' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 4' | bc -l) )); then
-		max_maxentscan_consequence_5='LOW'
-	# If the score is 4-10 and the difference to the reference score is >=4
-	elif (( $(echo $max_maxentscan_5' < 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 4' | bc -l) )); then
-		max_maxentscan_consequence_5='MED'
-	# If the score is greater than 10 and the difference to the reference score is >= 6
-	elif (( $(echo $max_maxentscan_5' >= 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 6' | bc -l) )); then
-		max_maxentscan_consequence_5='HIGH'
+	# Report progress for every 10 variants processed
+	if [[ $(echo $num_lines_processed | grep '0$') ]]; then
+		echo $(date +%x_%r) 'Processed '$num_lines_processed' variants'
 	fi
 	
-	##################################
-	
-	# 3' MaxEntScan score calculation
-	
-	max_maxentscan_3=''
-	max_maxentscan_sequence_3=''
-	max_maxentscan_coordinates_3=''
-	max_maxentscan_difference_3=''
-	max_maxentscan_consequence_3=''
-	
-	# $i is the offset for determining the coordinate range
-	for i in {0..22}; do
-		# Determine the putative splice site coordinate range
-		current_coordinate_range="$current_chr:"$(( $current_pos - 22 + $i ))"-"$(( $current_pos + $i ))
+	# Create a block for processing and calculating MaxEntScan scores which is pushed into the background at the end
+	{
+		# If the line is the header line
+		if [[ ${line:0:1} == "#" ]]; then
+			# Add to the header line
+			echo "$line"$'\t'"MaxEntScan_Consequence"$'\t'"5'_max_MaxEntScan_value"$'\t'"5'_max_MaxEntScan_reference_value"$'\t'"3'_max_MaxEntScan_value"$'\t'"3'_max_MaxEntScan_reference_value"$'\t'"5'_max_MaxEntScan_direction"$'\t'"3'_max_MaxEntScan_direction"$'\t'"5'_max_MaxEntScan_coordinates"$'\t'"3'_max_MaxEntScan_coordinates"$'\t'"5'_max_MaxEntScan_sequence"$'\t'"5'_max_MaxEntScan_reference_sequence"$'\t'"3'_max_MaxEntScan_sequence"$'\t'"3'_max_MaxEntScan_reference_sequence" > $out_dir/$prefix.introme.annotated.tsv
 		
-		# Extract the current splice site sequence and mutate the correct base corresponding to the variant
-		current_splice_site=${current_max_reference_context:(( 0 + $i )):(( 22 - $i ))}$current_alt${current_max_reference_context:23:$i}
-		
-		# Calculate MaxEntScan value
-		current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score3.pl - | cut -f 2)
-		
-		# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
-		if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_3 | bc -l) )); then
-			max_maxentscan_3=$current_maxentscan
-			max_maxentscan_sequence_3=$current_splice_site
-			max_maxentscan_coordinates_3=$current_coordinate_range
+			# Don't do any further processing on this line
+			continue
 		fi
-	done
 	
-	# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the reference sequence
-	max_maxentscan_sequence_3_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_3 | grep -v '^>')
-	max_maxentscan_3_reference=$(echo $max_maxentscan_sequence_3_reference | perl MaxEntScan/score3.pl - | cut -f 2)
+		# Current variant information
+		current_chr=$(echo "$line" | cut -f 1)
+		current_pos=$(echo "$line" | cut -f 2)
+		current_alt=$(echo "$line" | cut -f 4)
 	
-	# Calculate the absolute difference between the reference and variant scores (i.e. take negative numbers into account)
-	max_maxentscan_difference_3=$(echo $max_maxentscan_3" - "$max_maxentscan_3_reference | bc -l | sed 's/-//') # Force the difference to be positive so it's an absolute difference
+		# Calculate the maximum range we are interested in (corresponding to the 23-base windows)
+		current_max_coordinate_range="$current_chr:"$(( $current_pos - 22 ))"-"$(( $current_pos + 22 ))
 	
-	# Determine the potential MaxEntScan consequence (i.e. likelihood of a new splice site to replace the canonical one)
-	# If the score is below the reference score or below zero
-	if (( $(echo $max_maxentscan_3' <= '$max_maxentscan_3_reference | bc -l) )) || (( $(echo $max_maxentscan_3' < 0' | bc -l) )); then
-		max_maxentscan_consequence_3='NONE'
-	# If the score is 0-4 and the difference to the reference score is >=4
-	elif (( $(echo $max_maxentscan_3' < 4' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 4' | bc -l) )); then
-		max_maxentscan_consequence_3='LOW'
-	# If the score is 4-10 and the difference to the reference score is >=4
-	elif (( $(echo $max_maxentscan_3' < 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 4' | bc -l) )); then
-		max_maxentscan_consequence_3='MED'
-	# If the score is greater than 10 and the difference to the reference score is >= 6
-	elif (( $(echo $max_maxentscan_3' >= 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 6' | bc -l) )); then
-		max_maxentscan_consequence_3='HIGH'
-	fi
+		# Fetch the reference genome sequence once and subset it for windows
+		current_max_reference_context=$(samtools faidx $reference_genome $current_max_coordinate_range | grep -v '^>')
 	
-	##################################
+		##################################
 	
-	# Determine the maximum MaxEntScan consequence
+		# 5' MaxEntScan score calculation
 	
-	max_maxentscan_consequence=''
+		max_maxentscan_5=''
+		max_maxentscan_sequence_5=''
+		max_maxentscan_coordinates_5=''
+		max_maxentscan_difference_5=''
+		max_maxentscan_consequence_5=''
+		max_maxentscan_type_5=''
 	
-	if [[ $max_maxentscan_consequence_5 == 'HIGH' ]] || [[ $max_maxentscan_consequence_3 == 'HIGH' ]]; then
-		max_maxentscan_consequence='HIGH'
-	elif [[ $max_maxentscan_consequence_5 == 'MED' ]] || [[ $max_maxentscan_consequence_3 == 'MED' ]]; then
-		max_maxentscan_consequence='MED'
-	elif [[ $max_maxentscan_consequence_5 == 'LOW' ]] || [[ $max_maxentscan_consequence_3 == 'LOW' ]]; then
-		max_maxentscan_consequence='LOW'
-	else
-		max_maxentscan_consequence='NONE'
-	fi
+		# $i is the offset for determining the coordinate range
+		for i in {0..8}; do
+			# Determine the putative splice site coordinate range
+			current_coordinate_range="$current_chr:"$(( $current_pos - 8 + $i ))"-"$(( $current_pos + $i ))
+		
+			# Extract the current splice site sequence as in the reference genome and mutate the correct base corresponding to the variant
+			current_splice_site_reference=${current_max_reference_context:(( 14 + $i )):(( 8 - $i ))}$current_alt${current_max_reference_context:23:$i} # The numbers here are offsetting to ignore the full 23 base window and focus on the 9 base window
+		
+			for x in {1..4}; do
+				# Splice site sequence as in the reference genome
+				if [[ $x == 1 ]]; then
+					current_splice_site=$current_splice_site_reference
+				# Splice site sequence in the reverse direction to the reference genome
+				elif [[ $x == 2 ]]; then
+					current_splice_site=$(echo $current_splice_site_reference | rev)
+				# Splice site sequence as the complement to the reference genome
+				elif [[ $x == 3 ]]; then
+					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]")
+				# Splice site sequence as the reverse complement to the reference genome
+				elif [[ $x == 4 ]]; then
+					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]" | rev)
+				fi
+			
+				# Calculate MaxEntScan value
+				current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score5.pl - | cut -f 2)
+			
+				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
+				if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_5 | bc -l) )); then
+					max_maxentscan_5=$current_maxentscan
+					max_maxentscan_sequence_5=$current_splice_site
+					max_maxentscan_coordinates_5=$current_coordinate_range
+					max_maxentscan_type_5=$x
+				fi
+			done
+		done
 	
-	##################################
+		# Fetch the reference genome sequence for the window coordinates
+		max_maxentscan_sequence_5_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_5 | grep -v '^>')
 	
-	echo "$line"$'\t'"$max_maxentscan_consequence"$'\t'"$max_maxentscan_5"$'\t'"$max_maxentscan_5_reference"$'\t'"$max_maxentscan_3"$'\t'"$max_maxentscan_3_reference"$'\t'"$max_maxentscan_coordinates_5"$'\t'"$max_maxentscan_coordinates_3"$'\t'"$max_maxentscan_sequence_5"$'\t'"$max_maxentscan_sequence_5_reference"$'\t'"$max_maxentscan_sequence_3"$'\t'"$max_maxentscan_sequence_3_reference" >> $out_dir/$prefix.introme.annotated.tsv
+		# Adjust the reference genome sequence for reverse/complementary as needed
+		if [[ $max_maxentscan_type_5 == 2 ]]; then
+			max_maxentscan_sequence_5_reference=$(echo $max_maxentscan_sequence_5_reference | rev)
+		elif [[ $max_maxentscan_type_5 == 3 ]]; then
+			max_maxentscan_sequence_5_reference=$(echo $max_maxentscan_sequence_5_reference | tr "[ATCG]" "[TAGC]")
+		elif [[ $max_maxentscan_type_5 == 4 ]]; then
+			max_maxentscan_sequence_5_reference=$(echo $max_maxentscan_sequence_5_reference | tr "[ATCG]" "[TAGC]" | rev)
+		fi
 	
+		# Calculate the reference genome score
+		max_maxentscan_5_reference=$(echo $max_maxentscan_sequence_5_reference | perl MaxEntScan/score5.pl - | cut -f 2)
+	
+		# Calculate the absolute difference between the reference and variant scores (i.e. take negative numbers into account)
+		max_maxentscan_difference_5=$(echo $max_maxentscan_5" - "$max_maxentscan_5_reference | bc -l | sed 's/-//') # Force the difference to be positive so it's an absolute difference
+	
+		# Determine the potential MaxEntScan consequence (i.e. likelihood of a new splice site to replace the canonical one)
+		# If the score is below the reference score or below zero
+		if (( $(echo $max_maxentscan_5' <= '$max_maxentscan_5_reference | bc -l) )) || (( $(echo $max_maxentscan_5' < 0' | bc -l) )); then
+			max_maxentscan_consequence_5='NONE'
+		# If the score is 0-4 and the difference to the reference score is >=4
+		elif (( $(echo $max_maxentscan_5' < 4' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 4' | bc -l) )); then
+			max_maxentscan_consequence_5='LOW'
+		# If the score is 4-10 and the difference to the reference score is >=4
+		elif (( $(echo $max_maxentscan_5' < 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 4' | bc -l) )); then
+			max_maxentscan_consequence_5='MED'
+		# If the score is greater than 10 and the difference to the reference score is >= 6
+		elif (( $(echo $max_maxentscan_5' >= 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_5' >= 6' | bc -l) )); then
+			max_maxentscan_consequence_5='HIGH'
+		fi
+	
+		##################################
+	
+		# 3' MaxEntScan score calculation
+	
+		max_maxentscan_3=''
+		max_maxentscan_sequence_3=''
+		max_maxentscan_coordinates_3=''
+		max_maxentscan_difference_3=''
+		max_maxentscan_consequence_3=''
+		max_maxentscan_type_3=''
+	
+		# $i is the offset for determining the coordinate range
+		for i in {0..22}; do
+			# Determine the putative splice site coordinate range
+			current_coordinate_range="$current_chr:"$(( $current_pos - 22 + $i ))"-"$(( $current_pos + $i ))
+		
+			# Extract the current splice site sequence as in the reference genome and mutate the correct base corresponding to the variant
+			current_splice_site_reference=${current_max_reference_context:(( 0 + $i )):(( 22 - $i ))}$current_alt${current_max_reference_context:23:$i}
+		
+			for x in {1..4}; do
+				# Splice site sequence as in the reference genome
+				if [[ $x == 1 ]]; then
+					current_splice_site=$current_splice_site_reference
+				# Splice site sequence in the reverse direction to the reference genome
+				elif [[ $x == 2 ]]; then
+					current_splice_site=$(echo $current_splice_site_reference | rev)
+				# Splice site sequence as the complement to the reference genome
+				elif [[ $x == 3 ]]; then
+					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]")
+				# Splice site sequence as the reverse complement to the reference genome
+				elif [[ $x == 4 ]]; then
+					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]" | rev)
+				fi
+			
+				# Calculate MaxEntScan value
+				current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score3.pl - | cut -f 2)
+			
+				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
+				if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_3 | bc -l) )); then
+					max_maxentscan_3=$current_maxentscan
+					max_maxentscan_sequence_3=$current_splice_site
+					max_maxentscan_coordinates_3=$current_coordinate_range
+					max_maxentscan_type_3=$x
+				fi
+			done
+		done
+	
+		# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the reference sequence
+		max_maxentscan_sequence_3_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_3 | grep -v '^>')
+	
+		# Adjust the reference genome sequence for reverse/complementary as needed
+		if [[ $max_maxentscan_type_3 == 2 ]]; then
+			max_maxentscan_sequence_3_reference=$(echo $max_maxentscan_sequence_3_reference | rev)
+		elif [[ $max_maxentscan_type_3 == 3 ]]; then
+			max_maxentscan_sequence_3_reference=$(echo $max_maxentscan_sequence_3_reference | tr "[ATCG]" "[TAGC]")
+		elif [[ $max_maxentscan_type_3 == 4 ]]; then
+			max_maxentscan_sequence_3_reference=$(echo $max_maxentscan_sequence_3_reference | tr "[ATCG]" "[TAGC]" | rev)
+		fi
+	
+		# Calculate the reference genome score
+		max_maxentscan_3_reference=$(echo $max_maxentscan_sequence_3_reference | perl MaxEntScan/score3.pl - | cut -f 2)
+	
+		# Calculate the absolute difference between the reference and variant scores (i.e. take negative numbers into account)
+		max_maxentscan_difference_3=$(echo $max_maxentscan_3" - "$max_maxentscan_3_reference | bc -l | sed 's/-//') # Force the difference to be positive so it's an absolute difference
+	
+		# Determine the potential MaxEntScan consequence (i.e. likelihood of a new splice site to replace the canonical one)
+		# If the score is below the reference score or below zero
+		if (( $(echo $max_maxentscan_3' <= '$max_maxentscan_3_reference | bc -l) )) || (( $(echo $max_maxentscan_3' < 0' | bc -l) )); then
+			max_maxentscan_consequence_3='NONE'
+		# If the score is 0-4 and the difference to the reference score is >=4
+		elif (( $(echo $max_maxentscan_3' < 4' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 4' | bc -l) )); then
+			max_maxentscan_consequence_3='LOW'
+		# If the score is 4-10 and the difference to the reference score is >=4
+		elif (( $(echo $max_maxentscan_3' < 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 4' | bc -l) )); then
+			max_maxentscan_consequence_3='MED'
+		# If the score is greater than 10 and the difference to the reference score is >= 6
+		elif (( $(echo $max_maxentscan_3' >= 10' | bc -l) )) && (( $(echo $max_maxentscan_difference_3' >= 6' | bc -l) )); then
+			max_maxentscan_consequence_3='HIGH'
+		fi
+	
+		##################################
+	
+		# Determine the maximum MaxEntScan consequence
+	
+		max_maxentscan_consequence=''
+	
+		if [[ $max_maxentscan_consequence_5 == 'HIGH' ]] || [[ $max_maxentscan_consequence_3 == 'HIGH' ]]; then
+			max_maxentscan_consequence='HIGH'
+		elif [[ $max_maxentscan_consequence_5 == 'MED' ]] || [[ $max_maxentscan_consequence_3 == 'MED' ]]; then
+			max_maxentscan_consequence='MED'
+		elif [[ $max_maxentscan_consequence_5 == 'LOW' ]] || [[ $max_maxentscan_consequence_3 == 'LOW' ]]; then
+			max_maxentscan_consequence='LOW'
+		else
+			max_maxentscan_consequence='NONE'
+		fi
+	
+		##################################
+	
+		echo "$line"$'\t'"$max_maxentscan_consequence"$'\t'"$max_maxentscan_5"$'\t'"$max_maxentscan_5_reference"$'\t'"$max_maxentscan_3"$'\t'"$max_maxentscan_3_reference"$'\t'"$max_maxentscan_type_5"$'\t'"$max_maxentscan_type_3"$'\t'"$max_maxentscan_coordinates_5"$'\t'"$max_maxentscan_coordinates_3"$'\t'"$max_maxentscan_sequence_5"$'\t'"$max_maxentscan_sequence_5_reference"$'\t'"$max_maxentscan_sequence_3"$'\t'"$max_maxentscan_sequence_3_reference" >> $out_dir/$prefix.introme.annotated.tsv
+	} &	
 done
 
 echo $(date +%x_%r) 'MaxEntScan calculation complete'
+
+# Sort by chromosome and coordinate
+sort -k1,1n -k2,2n $out_dir/$prefix.introme.annotated.tsv > $out_dir/$prefix.introme.annotated.sorted.tsv
+mv $out_dir/$prefix.introme.annotated.sorted.tsv $out_dir/$prefix.introme.annotated.tsv
 
 ##################################
 
