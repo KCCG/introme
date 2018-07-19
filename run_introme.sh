@@ -6,8 +6,6 @@
 # Velimir Gayevskiy (vel@vel.nz)
 # Sarah Beecroft (sarah.beecroft@uwa.edu.au)
 #
-# TODO:
-# 1) Perhaps pre-calculate all possible max MaxEntScan scores/sequences for every possible SNP in the reference genome? Back-of-the-envelope estimate for this is 50,000 days on 1 CPU (for just 5' though) so with access to a few thousand it wouldn't take long.
 
 
 
@@ -157,7 +155,7 @@ echo $(date +%x_%r) 'Annotation complete'
 
 echo $(date +%x_%r) 'Beginning filtering'
 
-bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(DP)$max_DP && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
+bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(FORMAT/DP[*])$max_DP && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 
 echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
@@ -191,7 +189,7 @@ cat $out_dir/$prefix.introme.tsv | \
 while read line; do
 	# If the current number of running processes is below a certain number, wait to process further lines
 	# Processing each line uses 107 processes on one core (currently, this can change!) so use this as an indicator of how many cores this will simultaneously use
-	while [[ $(jobs -r | wc -l) -ge 700 ]]; do
+	while [[ $(jobs -r | wc -l) -ge 450 ]]; do
 		sleep 1
 	done
 	
