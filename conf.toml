@@ -38,7 +38,7 @@ ops=["self", "self"]
 names=["Branchpointer_Branchpoint_Prob", "Branchpointer_U2_Binding_Energy"]
 
 [[annotation]]
-file="annotations/canonical_gencode_final.sorted.bed.gz"
-columns = [4]
-ops=["self"]
-names=["Gene_Symbol"]
+file="subsetting/gencode.v28lift37.annotation.gtf.bed.gz"
+columns = [4, 5]
+ops=["self", "self"]
+names=["Gene_Symbol", "Gene_Strand"]

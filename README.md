@@ -19,7 +19,6 @@ Introme is developed on macOS and runs with the following dependencies which can
 * vcfanno
 * bcftools
 * bgzip
-* tabix
 * MaxEntScan (supplied with Introme from http://genes.mit.edu/burgelab/maxent/download/)
 
 ## The VCF file supplied should be
@@ -51,7 +50,7 @@ Introme is developed on macOS and runs with the following dependencies which can
 
 ## Example
 
-./run\_introme.sh -b subsetting/UCSC\_introns.bed.gz -v input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz -p Fam1 -i denovo -a A001C -r annotations/hs37d5.fasta-index/genome.fa
+./run\_introme.sh -b subsetting/gencode.v28lift37.annotation.gtf.bed.gz -v input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz -p Fam1 -i denovo -a A001C -a A002B -r annotations/hs37d5.fasta-index/genome.fa
 
 # MaxEntScan consequence logic
 
@@ -59,7 +58,7 @@ MaxEntScan produces a numeric score for a given string of 9 bases for 5' splice 
 
 Introme attempts to find the maximal splice site creation potential of the variant. It does this by first supposing that the variant is the first base of a new splice site and calculating the MaxEntScan for the resulting sequence from the reference genome with the variant at the first position. This process is repeated as a sliding window across 9 5' bases and 23 3' splice site bases to obtain 2 arrays of MaxEntScan scores. The maximal value of each of these represents the window that contains the variant that is most likely to create a new splice site. For this maximal window, Introme calculates the corresponding MaxEntScan value using just the reference genome for comparison.
 
-Introme is not aware of the directionality and strand of the gene within which each variant is located. As such, it performs the window approach described 4 times: forward, reverse, complement and reverse complement. The maximal value from all runs is taken as the most impactful.
+Genes can be located on the positive (forward) or negative (reverse) strands. If a gene is on a positive (forward) strand, it will be read in the same way as the reference genome sequence. If it's on the negative (reverse) strand, it will be read in reverse complement. Introme is aware of the direction of the gene(s) within which the variant falls. If there is more than one and all genes are pointing in the same direction, MaxEntScan will be calculated only in that direction (determining the reverse complement when necessary). Otherwise, it will be calculated in both directions and the maximum value will be reported along with the direction it was found in.
 
 MaxEntScan provides no way of interpreting the resulting score by default. Introme attempts to use the score to predict whether any given variant is likely to create a new splice site that overpowers the existing splice site. It does this by creating a "MaxEntScan Consequence" heuristic with NONE, LOW, MED and HIGH values for new splice site potential.
 

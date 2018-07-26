@@ -34,9 +34,10 @@ out_dir='./output'
 # Hard filter cutoffs for each annotation, filtering thresholds will depend on your application, we urge you to carefully consider these 
 MGRB_AF='<=0.01' # Minimum MGRB allele frequency (healthy Australian population)
 gnomad_popmax_AF='<=0.01' # Minimum gnomAD allele frequency in the population with the highest allele frequency in gnomAD
-CADD_Phred='>=6' # Minimum CADD score (phred-scaled)
+CADD_Phred='>=0' # Minimum CADD score (phred-scaled)
 min_QUAL='>=200' # The QUAL VCF field
-max_DP='>=20' # The sample with the highest depth in the VCF must have a higher depth than this value
+max_DP='>=20' # The sample with the highest depth must have a equal or larger depth than this value
+max_AD='>=5' # The sample with the highest number of alternate reads must have a equal or larger number than this value
 
 ##################################
 # INTROME ARGUMENTS
@@ -102,6 +103,15 @@ i=0
 
 # Go through every VCF sample name (they are ordered as they are in the VCF which is important for the index)
 while [[ $i -le $(( ${#vcfsamples[@]} - 1 )) ]]; do 
+	# Code to not apply genotype filtering to unaffected samples, will implement properly soon...
+	#stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
+	
+	#if [ $? != 0 ]; then
+	#	(( i++ ))
+		
+	#	continue
+	#fi
+	
 	# Start of the genotype filter string
 	genotype_filters+=" && FORMAT/GT[$i]='"
 		
@@ -155,7 +165,7 @@ echo $(date +%x_%r) 'Annotation complete'
 
 echo $(date +%x_%r) 'Beginning filtering'
 
-bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(FORMAT/DP[*])$max_DP && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
+bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(FORMAT/DP[*])$max_DP && MAX(FORMAT/AD[*:1])$max_AD && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 
 echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
@@ -164,7 +174,7 @@ echo $(date +%x_%r) 'Filtering complete'
 ##################################
 # STEP 5: Output final list of variants as a spreadsheet-friendly TSV
 
-bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/Gene_Symbol\t%INFO/CADD_Phred\t%INFO/MGRB_AF\t%INFO/gnomAD_PM_AF\t%INFO/CSQ\t%INFO/SPIDEX_dPSI_Max_Tissue\t%INFO/SPIDEX_dPSI_Zscore\t%INFO/dbscSNV_AdaBoost_Score\t%INFO/dbscSNV_RandomForest_Score\t%INFO/Branchpointer_Branchpoint_Prob\t%INFO/Branchpointer_U2_Binding_Energy[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
+bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/Gene_Symbol\t%INFO/Gene_Strand\t%INFO/CADD_Phred\t%INFO/MGRB_AF\t%INFO/gnomAD_PM_AF\t%INFO/CSQ\t%INFO/SPIDEX_dPSI_Max_Tissue\t%INFO/SPIDEX_dPSI_Zscore\t%INFO/dbscSNV_AdaBoost_Score\t%INFO/dbscSNV_RandomForest_Score\t%INFO/Branchpointer_Branchpoint_Prob\t%INFO/Branchpointer_U2_Binding_Energy[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
 
 # Remove the '[<number]' column numbers added by bcftools query to column names
 grep '^#' $out_dir/$prefix.introme.tsv | sed "s/\[[0-9]*\]//g" > $out_dir/$prefix.introme.tsv.header
@@ -216,13 +226,29 @@ while read line; do
 		current_chr=$(echo "$line" | cut -f 1)
 		current_pos=$(echo "$line" | cut -f 2)
 		current_alt=$(echo "$line" | cut -f 4)
+		current_strand=$(echo "$line" | cut -f 7)
 	
 		# Calculate the maximum range we are interested in (corresponding to the 23-base windows)
 		current_max_coordinate_range="$current_chr:"$(( $current_pos - 22 ))"-"$(( $current_pos + 22 ))
 	
 		# Fetch the reference genome sequence once and subset it for windows
 		current_max_reference_context=$(samtools faidx $reference_genome $current_max_coordinate_range | grep -v '^>')
-	
+		
+		# Determine the direction in which to look for putative splice sites based on the direction of the genes with which the variant overlaps
+		# If the variant overlaps with both a + and - strand gene
+		if [[ $(echo $current_strand | grep '-') ]] && [[ $(echo $current_strand | grep '+') ]]; then
+			current_strand_direction_calculation='unknown'
+		# If the variant only overlaps with - strand gene(s)
+		elif [[ $(echo $current_strand | grep '-') ]]; then
+			current_strand_direction_calculation='reverse'
+		# If the variant only overlaps with + strand gene(s)
+		elif [[ $(echo $current_strand | grep '+') ]]; then
+			current_strand_direction_calculation='forward'
+		# If the variant does not have a strand direction associated (it probably doesn't overlap with a gene)
+		else
+			current_strand_direction_calculation='unknown'
+		fi
+		
 		##################################
 	
 		# 5' MaxEntScan score calculation
@@ -238,50 +264,46 @@ while read line; do
 		for i in {0..8}; do
 			# Determine the putative splice site coordinate range
 			current_coordinate_range="$current_chr:"$(( $current_pos - 8 + $i ))"-"$(( $current_pos + $i ))
-		
-			# Extract the current splice site sequence as in the reference genome and mutate the correct base corresponding to the variant
-			current_splice_site_reference=${current_max_reference_context:(( 14 + $i )):(( 8 - $i ))}$current_alt${current_max_reference_context:23:$i} # The numbers here are offsetting to ignore the full 23 base window and focus on the 9 base window
-		
-			for x in {1..4}; do
-				# Splice site sequence as in the reference genome
-				if [[ $x == 1 ]]; then
-					current_splice_site=$current_splice_site_reference
-				# Splice site sequence in the reverse direction to the reference genome
-				elif [[ $x == 2 ]]; then
-					current_splice_site=$(echo $current_splice_site_reference | rev)
-				# Splice site sequence as the complement to the reference genome
-				elif [[ $x == 3 ]]; then
-					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]")
-				# Splice site sequence as the reverse complement to the reference genome
-				elif [[ $x == 4 ]]; then
-					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]" | rev)
-				fi
 			
-				# Calculate MaxEntScan value
-				current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score5.pl - | cut -f 2)
+			# Extract the current putative splice site sequence as in the reference genome and mutate the correct base corresponding to the variant
+			current_splice_site_forward=${current_max_reference_context:(( 14 + $i )):(( 8 - $i ))}$current_alt${current_max_reference_context:23:$i} # The numbers here are offsetting to ignore the full 23 base window and focus on the 9 base window
 			
-				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
-				if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_5 | bc -l) )); then
-					max_maxentscan_5=$current_maxentscan
-					max_maxentscan_sequence_5=$current_splice_site
-					max_maxentscan_coordinates_5=$current_coordinate_range
-					max_maxentscan_type_5=$x
-				fi
-			done
+			# If the variant gene is not on the reverse strand, calculate the MaxEntScan value for the splice site being on the forward strand
+			if [[ $current_strand_direction_calculation != "reverse" ]]; then
+				current_maxentscan_forward=$(echo $current_splice_site_forward | perl MaxEntScan/score5.pl - | cut -f 2)
+			fi
+			
+			# If the variant gene is not on the forward strand, calculate reverse values too
+			if [[ $current_strand_direction_calculation != "forward" ]]; then
+				# Determine the reverse complement putative splice site sequence
+				current_splice_site_reverse=$(echo $current_splice_site_forward | tr "[ATCG]" "[TAGC]" | rev)
+			
+				# Calculate the MaxEntScan value for the splice site being on the reverse strand
+				current_maxentscan_reverse=$(echo $current_splice_site_reverse | perl MaxEntScan/score5.pl - | cut -f 2)
+			fi
+			
+			# If the variant gene is on the forward strand, or the strand is unknown but the forward value is higher than the reverse value
+			if [[ $current_strand_direction_calculation == "forward" ]] || ([[ $current_strand_direction_calculation == "unknown" ]] && (( $(echo $current_maxentscan_forward' > '$current_maxentscan_reverse | bc -l) ))); then
+				max_maxentscan_5=$current_maxentscan_forward
+				max_maxentscan_sequence_5=$current_splice_site_forward
+				max_maxentscan_coordinates_5=$current_coordinate_range
+				max_maxentscan_type_5="forward"
+			else
+				max_maxentscan_5=$current_maxentscan_reverse
+				max_maxentscan_sequence_5=$current_splice_site_reverse
+				max_maxentscan_coordinates_5=$current_coordinate_range
+				max_maxentscan_type_5="reverse"
+			fi
 		done
-	
+		
 		# Fetch the reference genome sequence for the window coordinates
 		max_maxentscan_sequence_5_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_5 | grep -v '^>')
 	
-		# Adjust the reference genome sequence for reverse/complementary as needed
-		if [[ $max_maxentscan_type_5 == 2 ]]; then
-			max_maxentscan_sequence_5_reference=$(echo $max_maxentscan_sequence_5_reference | rev)
-		elif [[ $max_maxentscan_type_5 == 3 ]]; then
-			max_maxentscan_sequence_5_reference=$(echo $max_maxentscan_sequence_5_reference | tr "[ATCG]" "[TAGC]")
-		elif [[ $max_maxentscan_type_5 == 4 ]]; then
+		# Adjust the reference genome sequence if the most damaging putative splice site is on the reverse strand
+		if [[ $max_maxentscan_type_5 == "reverse" ]]; then
 			max_maxentscan_sequence_5_reference=$(echo $max_maxentscan_sequence_5_reference | tr "[ATCG]" "[TAGC]" | rev)
 		fi
-	
+		
 		# Calculate the reference genome score
 		max_maxentscan_5_reference=$(echo $max_maxentscan_sequence_5_reference | perl MaxEntScan/score5.pl - | cut -f 2)
 	
@@ -319,49 +341,45 @@ while read line; do
 			# Determine the putative splice site coordinate range
 			current_coordinate_range="$current_chr:"$(( $current_pos - 22 + $i ))"-"$(( $current_pos + $i ))
 		
-			# Extract the current splice site sequence as in the reference genome and mutate the correct base corresponding to the variant
-			current_splice_site_reference=${current_max_reference_context:(( 0 + $i )):(( 22 - $i ))}$current_alt${current_max_reference_context:23:$i}
-		
-			for x in {1..4}; do
-				# Splice site sequence as in the reference genome
-				if [[ $x == 1 ]]; then
-					current_splice_site=$current_splice_site_reference
-				# Splice site sequence in the reverse direction to the reference genome
-				elif [[ $x == 2 ]]; then
-					current_splice_site=$(echo $current_splice_site_reference | rev)
-				# Splice site sequence as the complement to the reference genome
-				elif [[ $x == 3 ]]; then
-					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]")
-				# Splice site sequence as the reverse complement to the reference genome
-				elif [[ $x == 4 ]]; then
-					current_splice_site=$(echo $current_splice_site_reference | tr "[ATCG]" "[TAGC]" | rev)
-				fi
+			# Extract the current putative splice site sequence as in the reference genome and mutate the correct base corresponding to the variant
+			current_splice_site_forward=${current_max_reference_context:(( 0 + $i )):(( 22 - $i ))}$current_alt${current_max_reference_context:23:$i}
 			
-				# Calculate MaxEntScan value
-				current_maxentscan=$(echo $current_splice_site | perl MaxEntScan/score3.pl - | cut -f 2)
+			# If the variant gene is not on the reverse strand, calculate the MaxEntScan value for the splice site being on the forward strand
+			if [[ $current_strand_direction_calculation != "reverse" ]]; then
+				current_maxentscan_forward=$(echo $current_splice_site_forward | perl MaxEntScan/score3.pl - | cut -f 2)
+			fi
 			
-				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current value is larger than the current maximum
-				if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan' > '$max_maxentscan_3 | bc -l) )); then
-					max_maxentscan_3=$current_maxentscan
-					max_maxentscan_sequence_3=$current_splice_site
-					max_maxentscan_coordinates_3=$current_coordinate_range
-					max_maxentscan_type_3=$x
-				fi
-			done
+			# If the variant gene is not on the forward strand, calculate reverse values too
+			if [[ $current_strand_direction_calculation != "forward" ]]; then
+				# Determine the reverse complement putative splice site sequence
+				current_splice_site_reverse=$(echo $current_splice_site_forward | tr "[ATCG]" "[TAGC]" | rev)
+			
+				# Calculate the MaxEntScan value for the splice site being on the reverse strand
+				current_maxentscan_reverse=$(echo $current_splice_site_reverse | perl MaxEntScan/score3.pl - | cut -f 2)
+			fi
+			
+			# If the variant gene is on the forward strand, or the strand is unknown but the forward value is higher than the reverse value
+			if [[ $current_strand_direction_calculation == "forward" ]] || ([[ $current_strand_direction_calculation == "unknown" ]] && (( $(echo $current_maxentscan_forward' > '$current_maxentscan_reverse | bc -l) ))); then
+				max_maxentscan_3=$current_maxentscan_forward
+				max_maxentscan_sequence_3=$current_splice_site_forward
+				max_maxentscan_coordinates_3=$current_coordinate_range
+				max_maxentscan_type_3="forward"
+			else
+				max_maxentscan_3=$current_maxentscan_reverse
+				max_maxentscan_sequence_3=$current_splice_site_reverse
+				max_maxentscan_coordinates_3=$current_coordinate_range
+				max_maxentscan_type_3="reverse"
+			fi
 		done
 	
 		# For the maximal MaxEntScan window sequence, calculate MaxEntScan for the reference sequence
 		max_maxentscan_sequence_3_reference=$(samtools faidx $reference_genome $max_maxentscan_coordinates_3 | grep -v '^>')
-	
-		# Adjust the reference genome sequence for reverse/complementary as needed
-		if [[ $max_maxentscan_type_3 == 2 ]]; then
-			max_maxentscan_sequence_3_reference=$(echo $max_maxentscan_sequence_3_reference | rev)
-		elif [[ $max_maxentscan_type_3 == 3 ]]; then
-			max_maxentscan_sequence_3_reference=$(echo $max_maxentscan_sequence_3_reference | tr "[ATCG]" "[TAGC]")
-		elif [[ $max_maxentscan_type_3 == 4 ]]; then
+		
+		# Adjust the reference genome sequence if the most damaging putative splice site is on the reverse strand
+		if [[ $max_maxentscan_type_3 == "reverse" ]]; then
 			max_maxentscan_sequence_3_reference=$(echo $max_maxentscan_sequence_3_reference | tr "[ATCG]" "[TAGC]" | rev)
 		fi
-	
+		
 		# Calculate the reference genome score
 		max_maxentscan_3_reference=$(echo $max_maxentscan_sequence_3_reference | perl MaxEntScan/score3.pl - | cut -f 2)
 	
