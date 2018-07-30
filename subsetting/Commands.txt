@@ -1,0 +1,22 @@
+gencode.v28lift37.annotation.gtf.bed.gz
+Generated with
+zgrep '\tgene\t' subsetting/gencode.v28lift37.annotation.gtf.gz | perl -pe 's/(.*?)\t.*?\t.*?\t(.*?)\t(.*?)\t.*?\t(.*?)\t.*?\t.*gene_name "(.*?)".*/\1\t\2\t\3\t\5\t\4/' | bgzip > subsetting/gencode.v28lift37.annotation.gtf.bed.gz
+tabix -p bed subsetting/gencode.v28lift37.annotation.gtf.bed.gz
+
+
+
+
+
+gencode.v28lift37.annotation.gtf.nopseudogenes.bed.gz
+Generated with
+zgrep '\tgene\t' subsetting/gencode.v28lift37.annotation.gtf.gz | grep -v 'processed_pseudogene' | perl -pe 's/(.*?)\t.*?\t.*?\t(.*?)\t(.*?)\t.*?\t(.*?)\t.*?\t.*gene_name "(.*?)".*/\1\t\2\t\3\t\5\t\4/' | bgzip > subsetting/gencode.v28lift37.annotation.gtf.nopseudogenes.bed.gz
+tabix -p bed subsetting/gencode.v28lift37.annotation.gtf.nopseudogenes.bed.gz
+
+
+
+
+
+gencode.v28lift37.annotation.gtf.codingonly.bed.gz
+Generated with
+zgrep '\tgene\t' subsetting/gencode.v28lift37.annotation.gtf.gz | grep 'protein_coding' | perl -pe 's/(.*?)\t.*?\t.*?\t(.*?)\t(.*?)\t.*?\t(.*?)\t.*?\t.*gene_name "(.*?)".*/\1\t\2\t\3\t\5\t\4/' | bgzip > subsetting/gencode.v28lift37.annotation.gtf.codingonly.bed.gz
+tabix -p bed subsetting/gencode.v28lift37.annotation.gtf.codingonly.bed.gz
