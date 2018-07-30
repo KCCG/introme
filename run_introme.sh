@@ -36,8 +36,8 @@ MGRB_AF='<=0.01' # Minimum MGRB allele frequency (healthy Australian population)
 gnomad_popmax_AF='<=0.01' # Minimum gnomAD allele frequency in the population with the highest allele frequency in gnomAD
 CADD_Phred='>=0' # Minimum CADD score (phred-scaled)
 min_QUAL='>=200' # The QUAL VCF field
-max_DP='>=20' # The sample with the highest depth must have a equal or larger depth than this value
-max_AD='>=5' # The sample with the highest number of alternate reads must have a equal or larger number than this value
+min_DP='>=20' # The sample with the highest depth must have a equal or larger depth than this value
+min_AD='>=5' # The sample with the highest number of alternate reads must have a equal or larger number than this value
 
 ##################################
 # INTROME ARGUMENTS
@@ -144,7 +144,7 @@ done
 # Cut the 4 first characters off the filter string (the " && ")
 genotype_filters=$(echo $genotype_filters | cut -c 4-)
 
-bcftools filter --threads 8 -i"$genotype_filters" $out_dir/$prefix.subset.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.vcf.gz
+bcftools filter --threads $(getconf _NPROCESSORS_ONLN) -i"$genotype_filters" $out_dir/$prefix.subset.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.vcf.gz
 tabix $out_dir/$prefix.subset.inheritancefilter.vcf.gz
 
 echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.vcf.gz | grep -v '^#' | wc -l) 'variants after familial filter'
@@ -155,7 +155,7 @@ echo $(date +%x_%r) 'Familial filtering complete'
 
 echo $(date +%x_%r) 'Beginning annotation'
 
-vcfanno -p 8 conf.toml $out_dir/$prefix.subset.inheritancefilter.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz # The conf.toml file specifies what VCFanno should annotate
+vcfanno -p $(getconf _NPROCESSORS_ONLN) conf.toml $out_dir/$prefix.subset.inheritancefilter.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz # The conf.toml file specifies what VCFanno should annotate
 tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz
 
 echo $(date +%x_%r) 'Annotation complete'
@@ -165,7 +165,7 @@ echo $(date +%x_%r) 'Annotation complete'
 
 echo $(date +%x_%r) 'Beginning filtering'
 
-bcftools filter --threads 8 -i"FILTER='PASS' && TYPE='snp' && QUAL$min_QUAL && MAX(FORMAT/DP[*])$max_DP && MAX(FORMAT/AD[*:1])$max_AD && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
+bcftools filter --threads $(getconf _NPROCESSORS_ONLN) -i"(FILTER='PASS' || FILTER='.') && TYPE='snp' && (QUAL$min_QUAL || QUAL='.') && MAX(FORMAT/DP[*])$min_DP && MAX(FORMAT/AD[*:1])$min_AD && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
 
 echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
@@ -418,10 +418,19 @@ while read line; do
 		fi
 	
 		##################################
-	
-		echo "$line"$'\t'"$max_maxentscan_consequence"$'\t'"$max_maxentscan_5"$'\t'"$max_maxentscan_5_reference"$'\t'"$max_maxentscan_3"$'\t'"$max_maxentscan_3_reference"$'\t'"$max_maxentscan_type_5"$'\t'"$max_maxentscan_type_3"$'\t'"$max_maxentscan_coordinates_5"$'\t'"$max_maxentscan_coordinates_3"$'\t'"$max_maxentscan_sequence_5"$'\t'"$max_maxentscan_sequence_5_reference"$'\t'"$max_maxentscan_sequence_3"$'\t'"$max_maxentscan_sequence_3_reference" >> $out_dir/$prefix.introme.annotated.tsv
+		
+		# Scatter the output variants to separate temporary files
+		
+		# Create an empty temporary file
+		tmpfile=$(mktemp /tmp/$prefix.introme.annotated.tsv.XXXXX)
+		
+		# Output the result to the temporary file
+		echo "$line"$'\t'"$max_maxentscan_consequence"$'\t'"$max_maxentscan_5"$'\t'"$max_maxentscan_5_reference"$'\t'"$max_maxentscan_3"$'\t'"$max_maxentscan_3_reference"$'\t'"$max_maxentscan_type_5"$'\t'"$max_maxentscan_type_3"$'\t'"$max_maxentscan_coordinates_5"$'\t'"$max_maxentscan_coordinates_3"$'\t'"$max_maxentscan_sequence_5"$'\t'"$max_maxentscan_sequence_5_reference"$'\t'"$max_maxentscan_sequence_3"$'\t'"$max_maxentscan_sequence_3_reference" >> $tmpfile
 	} &	
 done
+
+# Gather all temporary files into the results file
+cat /tmp/$prefix.introme.annotated.tsv.* >> $out_dir/$prefix.introme.annotated.tsv
 
 echo $(date +%x_%r) 'MaxEntScan calculation complete'
 
