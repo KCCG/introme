@@ -430,7 +430,9 @@ while read line; do
 done
 
 # Gather all temporary files into the results file
-cat /tmp/$prefix.introme.annotated.tsv.* >> $out_dir/$prefix.introme.annotated.tsv
+for file in /tmp/$prefix.introme.annotated.tsv.*; do 
+	cat "$file"
+done >> $out_dir/$prefix.introme.annotated.tsv
 
 echo $(date +%x_%r) 'MaxEntScan calculation complete'
 

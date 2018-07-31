@@ -1,18 +1,18 @@
 # What is Introme?
 
-Introme identifies high quality, rare, intronic, damaging genetic variants resulting from whole genome sequencing and following an expected mendelian inheritance pattern.
+Introme identifies genetic variants that are likely to disrupt existing splice sites or create new ones. Currently, these variants are discarded as 'low impact' in research and diagnostic settings, but have the potential to be just as damaging as exonic variants in disrupting normal gene expression.
 
-It takes a VCF file containing the millions of variants found in a typical family trio and applies a number of filters until a putatively damaging list of intronic variants is left. Further prediction and prioritisation is achieved using database annotations and calculation of potential to create cryptic splice sites.
+Introme accepts a joint-called VCF file containing up to millions of variants found in a typical family trio. It annotates the variants with a number of prediction scores, allele frequencies and pathogenicity estimates, then applies a number of filters to enrich for variants with pathogenic potential.
 
 # Developers
 
-Introme was conceived and initially specced as an idea by Dr. Mark Cowley and Dr. Velimir Gayevskiy. Sarah Beecroft carried out initial implementation. Dr. Velimir Gayevskiy reimplemented and added features.
+Introme was conceived and initially specced as an idea by Dr. Mark Cowley and Dr. Velimir Gayevskiy. Sarah Beecroft carried out initial implementation. Dr. Velimir Gayevskiy reimplemented and added many features.
 
 # Requirements
 
 ## You need the following software installed
 
-Introme is developed on macOS and runs with the following dependencies which can be mostly found using the Homebrew package manager for macOS. It should work just fine on Linux with the same dependencies installed as it is a Shell script.
+Introme was developed on macOS and runs with the following dependencies which can be mostly found using the Homebrew package manager for macOS. Since it's a Bash script, it should work just fine on Linux with the same dependencies installed.
 
 * bedtools
 * tabix
@@ -24,8 +24,9 @@ Introme is developed on macOS and runs with the following dependencies which can
 ## The VCF file supplied should be
 
 * Created using GATK HaplotypeCaller (other variant callers may work but are currently untested)
+* Run through GATK VQSR (again, not strictly required)
 * Decomposed and normalised (i.e. no multi-allelic variants) with vt
-* Annotated with VEP (optional but very useful for knowing what genes the variants are in)
+* Annotated with VEP (optional but very useful for knowing the standard predictions for each variant with transcripts)
 
 ## Annotations
 
@@ -41,12 +42,12 @@ Introme is developed on macOS and runs with the following dependencies which can
 
 ## Options
 
-* -a -- one or more affected sample names (specify multiple times if more than one), must have the same sample name as in the VCF file
-* -b -- path to search space BED file
-* -i -- inheritance pattern, can be one of "denovo" or "autrec"
-* -p -- output prefix
-* -v -- path to VCF file
-* -r -- path to reference genome fasta file (must be indexed with samtools)
+* `-a` -- one or more affected sample names (specify multiple times if more than one), must have the same sample name as in the VCF file
+* `-b` -- path to search space BED file
+* `-i` -- inheritance pattern, can be one of "denovo" or "autrec"
+* `-p` -- output prefix
+* `-v` -- path to VCF file
+* `-r` -- path to reference genome fasta file (must be indexed with samtools)
 
 ## Example
 
