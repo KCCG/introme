@@ -284,15 +284,21 @@ while read line; do
 			
 			# If the variant gene is on the forward strand, or the strand is unknown but the forward value is higher than the reverse value
 			if [[ $current_strand_direction_calculation == "forward" ]] || ([[ $current_strand_direction_calculation == "unknown" ]] && (( $(echo $current_maxentscan_forward' > '$current_maxentscan_reverse | bc -l) ))); then
-				max_maxentscan_5=$current_maxentscan_forward
-				max_maxentscan_sequence_5=$current_splice_site_forward
-				max_maxentscan_coordinates_5=$current_coordinate_range
-				max_maxentscan_type_5="forward"
+				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current forward value is larger than the current maximum
+				if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan_forward' > '$max_maxentscan_5 | bc -l) )); then
+					max_maxentscan_5=$current_maxentscan_forward
+					max_maxentscan_sequence_5=$current_splice_site_forward
+					max_maxentscan_coordinates_5=$current_coordinate_range
+					max_maxentscan_type_5="forward"
+				fi
 			else
-				max_maxentscan_5=$current_maxentscan_reverse
-				max_maxentscan_sequence_5=$current_splice_site_reverse
-				max_maxentscan_coordinates_5=$current_coordinate_range
-				max_maxentscan_type_5="reverse"
+				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current reverse value is larger than the current maximum
+				if [[ $max_maxentscan_5 == "" ]] || (( $(echo $current_maxentscan_reverse' > '$max_maxentscan_5 | bc -l) )); then
+					max_maxentscan_5=$current_maxentscan_reverse
+					max_maxentscan_sequence_5=$current_splice_site_reverse
+					max_maxentscan_coordinates_5=$current_coordinate_range
+					max_maxentscan_type_5="reverse"
+				fi
 			fi
 		done
 		
@@ -360,15 +366,21 @@ while read line; do
 			
 			# If the variant gene is on the forward strand, or the strand is unknown but the forward value is higher than the reverse value
 			if [[ $current_strand_direction_calculation == "forward" ]] || ([[ $current_strand_direction_calculation == "unknown" ]] && (( $(echo $current_maxentscan_forward' > '$current_maxentscan_reverse | bc -l) ))); then
-				max_maxentscan_3=$current_maxentscan_forward
-				max_maxentscan_sequence_3=$current_splice_site_forward
-				max_maxentscan_coordinates_3=$current_coordinate_range
-				max_maxentscan_type_3="forward"
+				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current forward value is larger than the current maximum
+				if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan_forward' > '$max_maxentscan_3 | bc -l) )); then
+					max_maxentscan_3=$current_maxentscan_forward
+					max_maxentscan_sequence_3=$current_splice_site_forward
+					max_maxentscan_coordinates_3=$current_coordinate_range
+					max_maxentscan_type_3="forward"
+				fi
 			else
-				max_maxentscan_3=$current_maxentscan_reverse
-				max_maxentscan_sequence_3=$current_splice_site_reverse
-				max_maxentscan_coordinates_3=$current_coordinate_range
-				max_maxentscan_type_3="reverse"
+				# If this is the first iteration where a max MaxEntScan hasn't been set yet or the current reverse value is larger than the current maximum
+				if [[ $max_maxentscan_3 == "" ]] || (( $(echo $current_maxentscan_reverse' > '$max_maxentscan_3 | bc -l) )); then
+					max_maxentscan_3=$current_maxentscan_reverse
+					max_maxentscan_sequence_3=$current_splice_site_reverse
+					max_maxentscan_coordinates_3=$current_coordinate_range
+					max_maxentscan_type_3="reverse"
+				fi
 			fi
 		done
 	
@@ -430,13 +442,13 @@ while read line; do
 done
 
 # Wait a few seconds for all threads to finish
-sleep 5
+sleep 10
 
 # Gather all temporary files into the results file
 for file in /tmp/$prefix.introme.annotated.tsv.*; do 
 	cat "$file"
 	rm "$file"
-done >> $out_dir/$prefix.introme.annotated.tsv]
+done >> $out_dir/$prefix.introme.annotated.tsv
 
 echo $(date +%x_%r) 'MaxEntScan calculation complete'
 
