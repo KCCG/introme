@@ -28,7 +28,6 @@ stringinarray () {
 # DEFINE VARIABLES
 
 # Directories
-anno_dir='./annotations'
 out_dir='./output'
 
 # Hard filter cutoffs for each annotation, filtering thresholds will depend on your application, we urge you to carefully consider these 
@@ -78,7 +77,7 @@ fi
 ##################################
 # STEP 1: subsetting the VCF to genomic regions of interest (first because it gets rid of the most variants)
 
-echo $(date +%x_%r) 'Beginning subsetting'
+echo $(date +%x_%r) 'Beginning subsetting to genomic regions of interest'
 echo $(gzip -d -c $input_VCF | grep -v '^#' | wc -l) 'variants prior to subsetting'
 
 bedtools intersect -header -u -a $input_VCF -b $input_BED | bgzip > $out_dir/$prefix.subset.vcf.gz # -u for unique record in VCF, otherwise multiple variants are output for overlapping introns
@@ -151,30 +150,41 @@ echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.vcf.gz | grep -v '^#
 echo $(date +%x_%r) 'Familial filtering complete'
 
 ##################################
-# STEP 3: annotate the subsetted VCF with useful information, to be used for filtering downstream
+# STEP 3: Hard filtering on variant quality (this is here to reduce the number of variants going into the CPU-costly annotation step below)
+
+echo $(date +%x_%r) 'Beginning quality filtering'
+
+bcftools filter --threads $(getconf _NPROCESSORS_ONLN) -i"(FILTER='PASS' || FILTER='.') && TYPE='snp' && (QUAL$min_QUAL || QUAL='.') && MAX(FORMAT/DP[*])$min_DP && MAX(FORMAT/AD[*:1])$min_AD" $out_dir/$prefix.subset.inheritancefilter.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.highquality.vcf.gz
+tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.highquality.vcf.gz
+
+echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.highquality.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
+echo $(date +%x_%r) 'Filtering complete'
+
+##################################
+# STEP 4: annotate the subsetted VCF with useful information, to be used for filtering downstream
 
 echo $(date +%x_%r) 'Beginning annotation'
 
-vcfanno -p $(getconf _NPROCESSORS_ONLN) conf.toml $out_dir/$prefix.subset.inheritancefilter.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz # The conf.toml file specifies what VCFanno should annotate
-tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz
+vcfanno -p $(getconf _NPROCESSORS_ONLN) conf.toml $out_dir/$prefix.subset.inheritancefilter.highquality.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.vcf.gz # The conf.toml file specifies what VCFanno should annotate
+tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.vcf.gz
 
 echo $(date +%x_%r) 'Annotation complete'
 
 ##################################
-# STEP 4: Hard filtering the subsetted, annotated VCF
+# STEP 5: Hard filtering on the values of annotations added in the previous step
 
-echo $(date +%x_%r) 'Beginning filtering'
+echo $(date +%x_%r) 'Beginning filtering by annotation values'
 
-bcftools filter --threads $(getconf _NPROCESSORS_ONLN) -i"(FILTER='PASS' || FILTER='.') && TYPE='snp' && (QUAL$min_QUAL || QUAL='.') && MAX(FORMAT/DP[*])$min_DP && MAX(FORMAT/AD[*:1])$min_AD && (MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
-tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz
+bcftools filter --threads $(getconf _NPROCESSORS_ONLN) -i"(MGRB_AF$MGRB_AF || MGRB_AF='.') && (gnomAD_PM_AF$gnomad_popmax_AF || gnomAD_PM_AF='.') && (Branchpointer_Branchpoint_Prob!='.' || (Branchpointer_Branchpoint_Prob='.' && (CADD_Phred$CADD_Phred || CADD_Phred='.')))" $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.filtered.vcf.gz
+tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.filtered.vcf.gz
 
-echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
+echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.filtered.vcf.gz | grep -v '^#' | wc -l) 'variants after filtering'
 echo $(date +%x_%r) 'Filtering complete'
 
 ##################################
-# STEP 5: Output final list of variants as a spreadsheet-friendly TSV
+# STEP 6: Output final list of variants as a spreadsheet-friendly TSV
 
-bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/Gene_Symbol\t%INFO/Gene_Strand\t%INFO/CADD_Phred\t%INFO/MGRB_AF\t%INFO/gnomAD_PM_AF\t%INFO/CSQ\t%INFO/SPIDEX_dPSI_Max_Tissue\t%INFO/SPIDEX_dPSI_Zscore\t%INFO/dbscSNV_AdaBoost_Score\t%INFO/dbscSNV_RandomForest_Score\t%INFO/Branchpointer_Branchpoint_Prob\t%INFO/Branchpointer_U2_Binding_Energy[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
+bcftools query -H -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/Gene_Symbol\t%INFO/Gene_Strand\t%INFO/CADD_Phred\t%INFO/MGRB_AF\t%INFO/gnomAD_PM_AF\t%INFO/CSQ\t%INFO/SPIDEX_dPSI_Max_Tissue\t%INFO/SPIDEX_dPSI_Zscore\t%INFO/dbscSNV_AdaBoost_Score\t%INFO/dbscSNV_RandomForest_Score\t%INFO/Branchpointer_Branchpoint_Prob\t%INFO/Branchpointer_U2_Binding_Energy[\t%GT][\t%DP][\t%AD][\t%GQ]\n' $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.filtered.vcf.gz > $out_dir/$prefix.introme.tsv
 
 # Remove the '[<number]' column numbers added by bcftools query to column names
 grep '^#' $out_dir/$prefix.introme.tsv | sed "s/\[[0-9]*\]//g" > $out_dir/$prefix.introme.tsv.header
@@ -186,7 +196,7 @@ sort -k1,1n -k2,2n $out_dir/$prefix.introme.tsv > $out_dir/$prefix.introme.sorte
 mv $out_dir/$prefix.introme.sorted.tsv $out_dir/$prefix.introme.tsv
 
 ##################################
-# STEP 6: Calculate the maximum 3' and 5' MaxEntScan value for sliding windows around each variant
+# STEP 7: Calculate the maximum 3' and 5' MaxEntScan value for sliding windows around each variant
 
 echo $(date +%x_%r) 'Beginning MaxEntScan calculation, number of variants to process: '$(cat $out_dir/$prefix.introme.tsv | wc -l)
 
@@ -206,8 +216,8 @@ while read line; do
 	# Iterate the number of lines processed
 	((num_lines_processed++))
 	
-	# Report progress for every 10 variants processed
-	if [[ $(echo $num_lines_processed | grep '0$') ]]; then
+	# Report progress for every 100 variants processed
+	if [[ $(echo $num_lines_processed | grep '00$') ]]; then
 		echo $(date +%x_%r) 'Processed '$num_lines_processed' variants'
 	fi
 	
