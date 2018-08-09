@@ -49,6 +49,7 @@ while getopts "a:b:v:p:i:r:" opt; do
         p) prefix="$OPTARG";; # Output file prefix
         i) inheritance_pattern="$OPTARG";; # Inheritance pattern to use
         r) reference_genome="$OPTARG";; # Path to the reference genome used for mapping
+        # TODO add -g for gene and -G for gene list file
     esac
 done
 shift $(( $OPTIND - 1 )) # Remove parsed options and args from $@ list
@@ -119,16 +120,16 @@ while [[ $i -le $(( ${#vcfsamples[@]} - 1 )) ]]; do
 		
 		# If the current VCF sample is affected
 		if [ $? == 0 ]; then
-			if [[ $inheritance_pattern == "denovo" ]]; then
+			if [[ $inheritance_pattern == "heterozygous" ]]; then
 				genotype_filters+="0/1"
-			elif [[ $inheritance_pattern == "autrec" ]]; then
+			elif [[ $inheritance_pattern == "homozygous" ]]; then
 				genotype_filters+="1/1"
 			fi
 		# If the current VCF sample is not affected
 		else
-			if [[ $inheritance_pattern == "denovo" ]]; then
+			if [[ $inheritance_pattern == "heterozygous" ]]; then
 				genotype_filters+="0/0"
-			elif [[ $inheritance_pattern == "autrec" ]]; then
+			elif [[ $inheritance_pattern == "homozygous" ]]; then
 				genotype_filters+="0/1"
 			fi
 		fi
@@ -164,6 +165,8 @@ echo $(date +%x_%r) 'Filtering complete'
 # STEP 4: annotate the subsetted VCF with useful information, to be used for filtering downstream
 
 echo $(date +%x_%r) 'Beginning annotation'
+
+export IRELATE_MAX_GAP=1000 # Note: this is set to speed up annotation when .csi (as opposed to .tbi) files are present via https://github.com/brentp/vcfanno/releases/
 
 vcfanno -p $(getconf _NPROCESSORS_ONLN) conf.toml $out_dir/$prefix.subset.inheritancefilter.highquality.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.vcf.gz # The conf.toml file specifies what VCFanno should annotate
 tabix -p vcf $out_dir/$prefix.subset.inheritancefilter.highquality.annotated.vcf.gz
@@ -208,8 +211,8 @@ cat $out_dir/$prefix.introme.tsv | \
 
 while read line; do
 	# If the current number of running processes is below a certain number, wait to process further lines
-	# Processing each line uses 107 processes on one core (currently, this can change!) so use this as an indicator of how many cores this will simultaneously use
-	while [[ $(jobs -r | wc -l) -ge 450 ]]; do
+	# Processing each line uses ~100 processes on one core (currently, this can change!) so multiply this by the number available for the number of simultaneous processes to create
+	while [[ $(jobs -r | wc -l) -ge $(echo "100 * $(getconf _NPROCESSORS_ONLN)" | bc -l) ]]; do
 		sleep 1
 	done
 	
@@ -452,7 +455,7 @@ while read line; do
 done
 
 # Wait a few seconds for all threads to finish
-sleep 10
+sleep 30
 
 # Gather all temporary files into the results file
 for file in /tmp/$prefix.introme.annotated.tsv.*; do 

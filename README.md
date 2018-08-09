@@ -44,14 +44,14 @@ Introme was developed on macOS and runs with the following dependencies which ca
 
 * `-a` -- one or more affected sample names (specify multiple times if more than one), must have the same sample name as in the VCF file
 * `-b` -- path to search space BED file
-* `-i` -- inheritance pattern, can be one of "denovo" or "autrec"
+* `-i` -- inheritance pattern, can be one of "heterozygous" or "homozygous"
 * `-p` -- output prefix
 * `-v` -- path to VCF file
 * `-r` -- path to reference genome fasta file (must be indexed with samtools)
 
 ## Example
 
-./run\_introme.sh -b subsetting/gencode.v28lift37.annotation.gtf.bed.gz -v input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz -p Fam1 -i denovo -a A001C -a A002B -r annotations/hs37d5.fasta-index/genome.fa
+./run\_introme.sh -b subsetting/gencode.v28lift37.annotation.gtf.bed.gz -v input/Fam1_jointcall.hc.vqsr.decomposed.normalised.vep.vcf.gz -p Fam1 -i heterozygous -a A001C -a A002B -r annotations/hs37d5.fasta-index/genome.fa
 
 # MaxEntScan consequence logic
 
@@ -74,3 +74,30 @@ Thus, these are the criteria for each of the consequence categories (they are ap
 
 The idea behind these heuristics is not to definitively indicate that a new splice site has been created, but instead to act as a guide. A more sophisticated analysis would be aware of the 5' and 3' scores for the real splice sites for the intron the variant is in and use this information intelligently with the sliding window approach and distance from splice site to predict impact. Of course, such an analysis should also be transcript and other upstream/downstream variant aware which adds another dimension of complexity...
 
+# Prediction of damage to existing splice sites and branch points
+
+The SPIDEX and dbscSNV annotations are used to predict whether a variant is damaging existing splice sites. SPIDEX looks at all exonic variants and 300bp into the introns while dbscSNV looks in the splicing regions only.
+
+The Branchpointer annotation is used to finding variants that are disrupting branch points and potentially leading to a failure of splicing. You will need to manually determine whether there are other branch points nearby that may take over for the damaged one. 
+
+# Interpretation of results
+
+You will need to subset the results file from Introme for each annotation: SPIDEX, dbscSNV, Branchpointer and MaxEntScan. The underlying genetic mechanisms are distinct so you will need to subset multiple times to interrogate each way splicing can be disrupted (by damage to an existing splice site, by damage to a branch point and by the creating of a new splice site). Any interesting variants will need to be interpreted in light of the sequence around them. For example, finding a variant in an intron that is creating a new 5' splice site means we are hypothesising that this variant is at the very end of a new exon, therefore we need to look at up to 1000bp upstream for an existing 3' splice site and 18-44bp upstream of that for a branch point.
+
+Do that like so:
+
+1) Pull out the reference genome sequence up/downstream of the variant depending on if it's a 3' or a 5' splice site-creating variant.
+
+samtools faidx ./genome.fa 4:27993059-27993759 
+
+Reverse complement this if needed (if the gene is on the reverse strand)
+
+echo "<sequence>" | tr "[ATCG]" "[TAGC]" | rev
+
+2) Walk through the sequence as windows and run MaxEntScan on each window.
+
+for i in {0..588}; do echo ${seq:(( 0 + $i )):9}; done | perl ./MaxEntScan/score5.pl - > ./5_prime_output.txt
+
+Find largest values (in Excel) and find the corresponding windows in the sequence pulled out in step 1.
+
+3) Functionally validate the finding. Good luck with that one.
