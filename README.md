@@ -44,7 +44,7 @@ Introme was developed on macOS and runs with the following dependencies which ca
 
 * `-a` -- one or more affected sample names (specify multiple times if more than one), must have the same sample name as in the VCF file
 * `-b` -- path to search space BED file
-* `-i` -- inheritance pattern, can be one of "heterozygous" or "homozygous"
+* `-i` -- inheritance pattern, can be one of "heterozygous", "homozygous" or "none"
 * `-p` -- output prefix
 * `-v` -- path to VCF file
 * `-r` -- path to reference genome fasta file (must be indexed with samtools)

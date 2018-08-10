@@ -90,65 +90,72 @@ echo $(date +%x_%r) 'Subsetting complete'
 ##################################
 # STEP 2: familial filtering (second because it gets rid of the second most variants)
 
-echo $(date +%x_%r) 'Beginning familial filtering'
+# If an inheritance pattern has been specified
+if [[ $inheritance_pattern != "none" ]]; then
+	echo $(date +%x_%r) 'Beginning familial filtering'
 
-# Capture each sample name in the VCF into an array
-vcfsamples=( $(bcftools query -l $out_dir/$prefix.subset.vcf.gz) )
+	# Capture each sample name in the VCF into an array
+	vcfsamples=( $(bcftools query -l $out_dir/$prefix.subset.vcf.gz) )
 
-# Variable to hold the bcftools genotype filter string
-genotype_filters=""
+	# Variable to hold the bcftools genotype filter string
+	genotype_filters=""
 
-# Variable to hold the current VCF sample index, used in referring to the right sample in filtering
-i=0
+	# Variable to hold the current VCF sample index, used in referring to the right sample in filtering
+	i=0
 
-# Go through every VCF sample name (they are ordered as they are in the VCF which is important for the index)
-while [[ $i -le $(( ${#vcfsamples[@]} - 1 )) ]]; do 
-	# Code to not apply genotype filtering to unaffected samples, will implement properly soon...
-	#stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
+	# Go through every VCF sample name (they are ordered as they are in the VCF which is important for the index)
+	while [[ $i -le $(( ${#vcfsamples[@]} - 1 )) ]]; do 
+		# Code to not apply genotype filtering to unaffected samples, will implement properly soon...
+		#stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
 	
-	#if [ $? != 0 ]; then
-	#	(( i++ ))
+		#if [ $? != 0 ]; then
+		#	(( i++ ))
 		
-	#	continue
-	#fi
+		#	continue
+		#fi
 	
-	# Start of the genotype filter string
-	genotype_filters+=" && FORMAT/GT[$i]='"
+		# Start of the genotype filter string
+		genotype_filters+=" && FORMAT/GT[$i]='"
 		
-		# Run custom function to check if the current VCF sample has been supplied as an affected sample
-		stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
+			# Run custom function to check if the current VCF sample has been supplied as an affected sample
+			stringinarray "${vcfsamples[$i]}" "${affected_samples[@]}"
 		
-		# If the current VCF sample is affected
-		if [ $? == 0 ]; then
-			if [[ $inheritance_pattern == "heterozygous" ]]; then
-				genotype_filters+="0/1"
-			elif [[ $inheritance_pattern == "homozygous" ]]; then
-				genotype_filters+="1/1"
+			# If the current VCF sample is affected
+			if [ $? == 0 ]; then
+				if [[ $inheritance_pattern == "heterozygous" ]]; then
+					genotype_filters+="0/1"
+				elif [[ $inheritance_pattern == "homozygous" ]]; then
+					genotype_filters+="1/1"
+				fi
+			# If the current VCF sample is not affected
+			else
+				if [[ $inheritance_pattern == "heterozygous" ]]; then
+					genotype_filters+="0/0"
+				elif [[ $inheritance_pattern == "homozygous" ]]; then
+					genotype_filters+="0/1"
+				fi
 			fi
-		# If the current VCF sample is not affected
-		else
-			if [[ $inheritance_pattern == "heterozygous" ]]; then
-				genotype_filters+="0/0"
-			elif [[ $inheritance_pattern == "homozygous" ]]; then
-				genotype_filters+="0/1"
-			fi
-		fi
 
-	# Close off genotype filter string
-	genotype_filters+="'"
+		# Close off genotype filter string
+		genotype_filters+="'"
 
-	# Iterate the $i variable
-	(( i++ ))
-done
+		# Iterate the $i variable
+		(( i++ ))
+	done
 
-# Cut the 4 first characters off the filter string (the " && ")
-genotype_filters=$(echo $genotype_filters | cut -c 4-)
+	# Cut the 4 first characters off the filter string (the " && ")
+	genotype_filters=$(echo $genotype_filters | cut -c 4-)
 
-bcftools filter --threads $(getconf _NPROCESSORS_ONLN) -i"$genotype_filters" $out_dir/$prefix.subset.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.vcf.gz
-tabix $out_dir/$prefix.subset.inheritancefilter.vcf.gz
+	bcftools filter --threads $(getconf _NPROCESSORS_ONLN) -i"$genotype_filters" $out_dir/$prefix.subset.vcf.gz | bgzip > $out_dir/$prefix.subset.inheritancefilter.vcf.gz
+	tabix $out_dir/$prefix.subset.inheritancefilter.vcf.gz
 
-echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.vcf.gz | grep -v '^#' | wc -l) 'variants after familial filter'
-echo $(date +%x_%r) 'Familial filtering complete'
+	echo $(gzip -d -c $out_dir/$prefix.subset.inheritancefilter.vcf.gz | grep -v '^#' | wc -l) 'variants after familial filter'
+	echo $(date +%x_%r) 'Familial filtering complete'
+# If the "none" inheritance pattern has been specified, just use the subset VCF as the inheritance filtered VCF so the rest of the pipeline carries on as normal
+else
+	mv $out_dir/$prefix.subset.vcf.gz $out_dir/$prefix.subset.inheritancefilter.vcf.gz
+	mv $out_dir/$prefix.subset.vcf.gz.tbi $out_dir/$prefix.subset.inheritancefilter.vcf.gz.tbi
+fi
 
 ##################################
 # STEP 3: Hard filtering on variant quality (this is here to reduce the number of variants going into the CPU-costly annotation step below)
